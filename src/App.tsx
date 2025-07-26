@@ -405,7 +405,7 @@ const ScannerEffect: FC<{onScan: (entry: BatteryEntry) => void}> = ({ onScan }) 
 
             const handleError = (errorMessage: string) => {
                 // Ignore common errors like "QR code not found" to avoid spamming the user.
-                // console.error("QR Scan Error:", errorMessage);
+                console.error("QR Scan Error:", errorMessage);
             };
 
             scanner.render(handleSuccess, handleError);
