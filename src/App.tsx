@@ -4,24 +4,22 @@ import React, { useState, useEffect, createContext, useContext, useCallback, use
 import { motion, AnimatePresence } from "framer-motion";
 import { Html5QrcodeScanner, type QrcodeSuccessCallback } from "html5-qrcode";
 import {
- Power, QrCode, Share2, X, MapPin, ChevronDown, BatteryFull, CheckCircle, Copy, AlertTriangle, Info, Sun, Moon, User, Save, History, LayoutGrid, ChevronsRight, Target, BatteryCharging, Calendar, Clock, XCircle
+    Share2, X, MapPin, ChevronDown, BatteryFull, CheckCircle, Copy, AlertTriangle, Info, Sun, Moon, User, Save, History, LayoutGrid, ChevronsRight, Target, BatteryCharging, Calendar, Clock, XCircle, Boxes, ScanLine
 } from "lucide-react";
 
-// --- CONFIGURATION & CONSTANTS ---
 const APP_NAME = "SnapStock";
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap";
 const STATIONS_DATA = [
- { id: "De963991", name: "Hallo Majra" },
- { id: "De425627", name: "Raipur Khurd" },
- { id: "De988915", name: "Sector 42" },
- { id: "De316535", name: "Maloya" },
- { id: "De337282", name: "Daria" },
- { id: "De258797", name: "Sector 20" },
- { id: "De455892", name: "Sector 35" },
- { id: "De297974", name: "Sector 26" },
+    { id: "De963991", name: "Hallo Majra", city: "Chandigarh" },
+    { id: "De425627", name: "Raipur Khurd", city: "Chandigarh" },
+    { id: "De988915", name: "Sector 42", city: "Chandigarh" },
+    { id: "De316535", name: "Maloya", city: "Chandigarh" },
+    { id: "De337282", name: "Daria", city: "Chandigarh" },
+    { id: "De258797", name: "Sector 20", city: "Chandigarh" },
+    { id: "De455892", name: "Sector 35", city: "Chandigarh" },
+    { id: "De297974", name: "Sector 26", city: "Chandigarh" },
 ];
 
-// --- TYPE DEFINITIONS ---
 type Theme = "light" | "dark";
 type ActiveView = 'main' | 'history' | 'profile';
 type ToastType = "success" | "error" | "info";
@@ -31,47 +29,44 @@ type ScanSession = { date: string; timestamp: string; chargers: number; entries:
 type ScannedData = { [stationId: string]: ScanSession[] };
 interface ToastItem { id: number; message: string; type: ToastType }
 type SharePayload = ScanSession | null;
+type StationOption = { id: string; name: string; city: string };
 
-
-// --- REACT CONTEXT SETUP ---
 interface AppContextType {
- theme: Theme;
- toggleTheme: () => void;
- profile: Profile;
- updateProfile: (newProfile: Profile) => void;
- showToast: (message: string, type?: ToastType) => void;
- scannedData: ScannedData;
- commitSessionToHistory: (session: ScanSession) => void;
- activeView: ActiveView;
- setActiveView: (view: ActiveView) => void;
- triggerShare: (payload: SharePayload) => void;
+    theme: Theme;
+    toggleTheme: () => void;
+    profile: Profile;
+    updateProfile: (newProfile: Profile) => void;
+    showToast: (message: string, type?: ToastType) => void;
+    scannedData: ScannedData;
+    commitSessionToHistory: (session: ScanSession) => void;
+    activeView: ActiveView;
+    setActiveView: (view: ActiveView) => void;
+    triggerShare: (payload: SharePayload) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 const useAppContext = () => {
- const context = useContext(AppContext);
- if (!context) throw new Error("useAppContext must be used within an AppProvider");
- return context;
+    const context = useContext(AppContext);
+    if (!context) throw new Error("useAppContext must be used within an AppProvider");
+    return context;
 };
 
-// --- GLOBAL STYLES & HELPER FUNCTIONS ---
 const GlobalStyles: FC = () => (
- <style>{`
+    <style>{`
     :root {
       --font-primary: 'Outfit', sans-serif;
       --radius: 0.75rem;
-      
       --c-bg: #F4F7FE;
       --c-bg-alt: #FFFFFF;
       --c-text: #0D111C;
       --c-text-alt: #5C677D;
+      --c-text-faint: #9CA3AF;
       --c-border: #E5E9F2;
       --c-accent: #4F46E5;
       --c-accent-glow: rgba(79, 70, 229, 0.2);
       --c-accent-text: #FFFFFF;
       --c-danger: #e54646;
       --c-success: #22c55e;
-      
       --shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
       --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.06);
     }
@@ -80,6 +75,7 @@ const GlobalStyles: FC = () => (
       --c-bg-alt: #161B22;
       --c-text: #E6EDF3;
       --c-text-alt: #8D96A0;
+      --c-text-faint: #4B5563;
       --c-border: #30363D;
       --c-accent: #58A6FF;
       --c-accent-glow: rgba(88, 166, 255, 0.15);
@@ -95,95 +91,46 @@ const GlobalStyles: FC = () => (
       -moz-osx-font-smoothing: grayscale;
       overscroll-behavior: none;
     }
-    .transition-all { transition: all 0.2s ease-in-out; }
-    
-    /* --- QR Scanner Style Overrides --- */
-    #qr-code-reader {
-        border: none;
-        border-radius: 0;
-    }
-    #qr-code-reader > div:first-of-type {
-        border: none !important;
-    }
-    #qr-code-reader video {
-        object-fit: cover !important;
-        border-radius: 0 !important;
-    }
-    #qr-code-reader__dashboard {
-      position: absolute;
-      top: 1rem;
-      left: 1rem;
-      right: 1rem;
-      display: flex;
-      justify-content: space-between;
-      z-index: 25;
-    }
-    #qr-code-reader__dashboard_section_csr > span {
-      display: none !important; /* Hide "Scan from file" text */
-    }
-    #qr-code-reader__dashboard_section_csr a, #html5-qrcode-button-torch {
-      padding: 10px 16px !important;
-      border-radius: var(--radius) !important;
-      background: rgba(0,0,0,0.4) !important;
-      backdrop-filter: blur(5px);
-      color: white !important;
-      font-family: var(--font-primary) !important;
-      font-weight: 600 !important;
-      font-size: 14px;
-      text-decoration: none !important;
-      border: 1px solid rgba(255, 255, 255, 0.2) !important;
-      transition: background-color 0.2s ease;
-      cursor: pointer;
-    }
-    #html5-qrcode-button-torch {
-      width: 48px;
-      height: 48px;
-      padding: 12px !important;
-    }
-    #qr-code-reader__dashboard_section_csr a:hover, #html5-qrcode-button-torch:hover {
-      background: rgba(0,0,0,0.6) !important;
-    }
-    
-    @keyframes scan {
-      0% { transform: translateY(0px); }
-      100% { transform: translateY(245px); }
-    }
-    .animate-scan {
-      animation: scan 3s cubic-bezier(0.65, 0, 0.35, 1) infinite alternate;
-    }
+    #qr-code-reader { border: none !important; border-radius: var(--radius); overflow: hidden; }
+    #qr-code-reader > div:first-of-type { border: none !important; }
+    #qr-code-reader video { object-fit: cover !important; width: 100% !important; height: 100% !important; border-radius: var(--radius) !important; }
+    #qr-code-reader__dashboard { display: none !important; }
+    @keyframes scan { 0% { transform: translateY(0px); } 100% { transform: translateY(245px); } }
+    .animate-scan { animation: scan 3s cubic-bezier(0.65, 0, 0.35, 1) infinite alternate; }
   `}</style>
 );
 
-// --- REUSABLE UI COMPONENTS ---
 const Card: FC<{ children: ReactNode; className?: string }> = ({ children, className = "" }) => (
- <div className={`bg-[var(--c-bg-alt)] rounded-[var(--radius)] shadow-[var(--shadow)] transition-all ${className}`}>{children}</div>
+    <div className={`bg-[var(--c-bg-alt)] rounded-[var(--radius)] shadow-[var(--shadow)] transition-all ${className}`}>{children}</div>
 );
 
-const Modal: FC<{ isOpen: boolean; onClose: () => void; title: string; children: ReactNode }> = ({ isOpen, onClose, title, children }) => (
- <AnimatePresence>
-    {isOpen && (
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-          className="bg-[var(--c-bg)] rounded-xl shadow-[var(--shadow-lg)] w-full max-w-sm border border-[var(--c-border)]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between p-4 border-b border-[var(--c-border)]">
-            <h3 className="text-lg font-semibold">{title}</h3>
-            <button onClick={onClose} className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer">
-              <X size={20} />
-            </button>
-          </div>
-          <div className="p-5">{children}</div>
-        </motion.div>
-      </motion.div>
-    )}
- </AnimatePresence>
+const Modal: FC<{ isOpen: boolean; onClose?: () => void; title: string; children: ReactNode; hideCloseButton?: boolean; }> = ({ isOpen, onClose, title, children, hideCloseButton = false }) => (
+    <AnimatePresence>
+        {isOpen && (
+            <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+                onClick={onClose}
+            >
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    className="bg-[var(--c-bg)] rounded-xl shadow-[var(--shadow-lg)] w-full max-w-sm border border-[var(--c-border)]"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-center justify-between p-4 border-b border-[var(--c-border)]">
+                        <h3 className="text-lg font-semibold">{title}</h3>
+                        {!hideCloseButton && (
+                            <button onClick={onClose} className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer">
+                                <X size={20} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="p-5">{children}</div>
+                </motion.div>
+            </motion.div>
+        )}
+    </AnimatePresence>
 );
 
 const ToastContainer: FC<{ toasts: ToastItem[]; onDismiss: (id: number) => void }> = ({ toasts, onDismiss }) => {
@@ -216,10 +163,9 @@ const ToastContainer: FC<{ toasts: ToastItem[]; onDismiss: (id: number) => void 
     );
 };
 
-const CustomDropdown: FC<{ options: {id: string; name: string}[]; selected: Profile; onSelect: (profile: Pick<Profile, 'stationId' | 'stationName'>) => void; }> = ({ options, selected, onSelect }) => {
+const CustomDropdown: FC<{ options: StationOption[]; selected: Profile; onSelect: (profile: Pick<Profile, 'stationId' | 'stationName'>) => void; }> = ({ options, selected, onSelect }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setIsOpen(false);
@@ -227,12 +173,10 @@ const CustomDropdown: FC<{ options: {id: string; name: string}[]; selected: Prof
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
-
-    const handleSelect = (option: {id: string; name: string}) => {
+    const handleSelect = (option: StationOption) => {
         onSelect({ stationId: option.id, stationName: option.name });
         setIsOpen(false);
     };
-
     return (
         <div className="relative" ref={dropdownRef}>
             <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between bg-[var(--c-bg)] p-3 rounded-lg border border-[var(--c-border)] hover:border-[var(--c-accent)] focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none cursor-pointer">
@@ -247,7 +191,10 @@ const CustomDropdown: FC<{ options: {id: string; name: string}[]; selected: Prof
                     <motion.ul initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full mt-2 w-full bg-[var(--c-bg-alt)] border border-[var(--c-border)] rounded-lg shadow-[var(--shadow-lg)] z-10 p-1 max-h-60 overflow-y-auto">
                         {options.map(option => (
                             <li key={option.id} onClick={() => handleSelect(option)} className="flex items-center justify-between p-2.5 rounded-md hover:bg-[var(--c-accent)] hover:text-[var(--c-accent-text)] cursor-pointer text-sm font-medium">
-                                {option.name}
+                                <div>
+                                    {option.name}
+                                    <span className="block text-xs opacity-70">{option.city}</span>
+                                </div>
                                 {option.id === selected.stationId && <CheckCircle size={16} />}
                             </li>
                         ))}
@@ -258,22 +205,22 @@ const CustomDropdown: FC<{ options: {id: string; name: string}[]; selected: Prof
     );
 };
 
-
-// --- APP-SPECIFIC COMPONENTS ---
-
 const Header: FC = () => {
     const { profile } = useAppContext();
     return (
-        <header className="p-4 flex items-center justify-between sticky top-0 bg-[var(--c-bg)]/80 backdrop-blur-md z-10 border-b border-[var(--c-border)]">
-            <div className="flex items-center gap-3">
+        <header className="p-4 h-[65px] flex items-center justify-between sticky top-0 bg-[var(--c-bg)]/80 backdrop-blur-md z-10 border-b border-[var(--c-border)]">
+            <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-[var(--c-accent)] rounded-lg flex items-center justify-center shadow-[0_0_20px] shadow-[var(--c-accent-glow)]">
-                    <Power className="text-[var(--c-accent-text)]" size={20} />
+                    <Boxes className="text-[var(--c-accent-text)]" size={20} />
                 </div>
-                <div>
-                    <h1 className="text-lg font-bold tracking-tight leading-tight">{APP_NAME}</h1>
-                    <p className="text-xs text-[var(--c-text-alt)] leading-tight">{profile.stationName || 'No Profile Set'}</p>
-                </div>
+                <h1 className="text-lg font-bold tracking-tight">{APP_NAME}</h1>
             </div>
+            {profile.stationName && (
+                <div className="flex items-center gap-2 text-sm text-[var(--c-text-alt)]">
+                    <span className="font-semibold text-right text-[var(--c-text)]">{profile.stationName}</span>
+                    <MapPin size={16} className="text-[var(--c-accent)]" />
+                </div>
+            )}
         </header>
     );
 };
@@ -281,10 +228,8 @@ const Header: FC = () => {
 const BottomNav: FC = () => {
     const { activeView, setActiveView, theme, toggleTheme } = useAppContext();
     const [isScanFlowActive, setIsScanFlowActive] = useState(false);
-
     const navButtonClass = (view: ActiveView | 'theme') =>
         `transition-all duration-200 active:scale-90 p-2 rounded-xl flex flex-col items-center justify-center space-y-1 h-14 cursor-pointer ${activeView === view ? 'text-[var(--c-accent)]' : 'text-[var(--c-text-alt)] hover:bg-[var(--c-bg)]'}`;
-
     return (
         <>
             <footer className="fixed bottom-0 left-0 right-0 bg-[var(--c-bg-alt)]/80 backdrop-blur-md border-t border-[var(--c-border)] z-50">
@@ -295,18 +240,15 @@ const BottomNav: FC = () => {
                     <button onClick={() => setActiveView('history')} className={navButtonClass('history')}>
                         <History size={20} /> <span className="text-xs font-medium">History</span>
                     </button>
-                    
                     <div className="flex justify-center">
                         <button onClick={() => setIsScanFlowActive(true)} className="transform -translate-y-4 bg-[var(--c-accent)] text-[var(--c-accent-text)] h-16 w-16 rounded-2xl flex flex-col items-center justify-center font-bold transition-all active:scale-95 hover:opacity-90 shadow-[var(--shadow-lg)] border-4 border-[var(--c-bg-alt)] cursor-pointer">
-                            <QrCode size={24} /> <span className="text-xs mt-1">Scan</span>
+                            <ScanLine size={24} /> <span className="text-xs mt-1">Scan</span>
                         </button>
                     </div>
-
                     <button onClick={toggleTheme} className={navButtonClass('theme')}>
                         {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
                         <span className="text-xs font-medium capitalize">{theme === 'light' ? 'Dark' : 'Light'}</span>
                     </button>
-                    
                     <button onClick={() => setActiveView('profile')} className={navButtonClass('profile')}>
                         <User size={20} /> <span className="text-xs font-medium">Profile</span>
                     </button>
@@ -322,23 +264,17 @@ const BottomNav: FC = () => {
 const ShareModal: FC<{ payload: SharePayload, onClose: () => void }> = ({ payload, onClose }) => {
     const { profile, showToast } = useAppContext();
     const isOpen = !!payload;
-
     const shareText = useMemo(() => {
         if (!payload) return "";
         return `🔋 *${APP_NAME} - Scan Report* 🔋\n\n*Station:* ${profile.stationName}\n*ID:* ${profile.stationId}\n*Date:* ${new Date(payload.date).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})} at ${payload.timestamp}\n\n*Total Chargers:* ${payload.chargers}\n*Batteries Scanned:* ${payload.entries.length}\n\n*--- Scanned IDs ---*\n${payload.entries.map(e => e.batteryId).join('\n') || 'No batteries in this session.'}`;
     }, [payload, profile]);
-    
     const whatsappLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-    
     const copyToClipboard = () => {
         navigator.clipboard.writeText(shareText).then(() => {
             showToast("Report copied!", "success");
             onClose();
-        }, () => {
-            showToast("Failed to copy", "error");
-        });
+        }, () => { showToast("Failed to copy", "error"); });
     };
-
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Share Scan Report">
             <div className="space-y-4">
@@ -354,231 +290,203 @@ const ShareModal: FC<{ payload: SharePayload, onClose: () => void }> = ({ payloa
 };
 
 const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
- type Stage = 'chargers' | 'scanning';
- const [stage, setStage] = useState<Stage>('chargers');
- const [chargers, setChargers] = useState<number | ''>('');
- const [sessionEntries, setSessionEntries] = useState<BatteryEntry[]>([]);
- const [isListOpen, setIsListOpen] = useState(false);
- const [isScannerActive, setIsScannerActive] = useState(false);
- const { commitSessionToHistory, triggerShare, showToast, profile } = useAppContext();
+    type Stage = 'chargers' | 'scanning';
+    const [stage, setStage] = useState<Stage>('chargers');
+    const [chargers, setChargers] = useState<number | ''>('');
+    const [sessionEntries, setSessionEntries] = useState<BatteryEntry[]>([]);
+    const [isListOpen, setIsListOpen] = useState(false);
+    const [showPermissionModal, setShowPermissionModal] = useState(true);
+    const [cameraAllowed, setCameraAllowed] = useState(false);
+    const { commitSessionToHistory, triggerShare, showToast, profile } = useAppContext();
 
- const startScanning = () => {
-    if (!profile.stationId) {
-        showToast("Please set a station profile first.", "error");
+    const startScanning = () => {
+        if (!profile.stationId) {
+            showToast("Please set a station profile first.", "error");
+            onExit();
+            return;
+        }
+        setStage('scanning');
+    }
+
+    const handleAllowCamera = () => {
+        setShowPermissionModal(false);
+        setCameraAllowed(true);
+    };
+
+    const completeAndExit = () => {
+        if (sessionEntries.length > 0) {
+            const session: ScanSession = {
+                date: new Date().toISOString(),
+                timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                chargers: Number(chargers) || 0,
+                entries: sessionEntries
+            };
+            commitSessionToHistory(session);
+            triggerShare(session);
+        } else {
+            showToast("Scan session cancelled, no entries saved.", "info");
+        }
         onExit();
-        return;
-    }
-    setStage('scanning');
- }
-
- const completeAndExit = () => {
-    if (sessionEntries.length > 0) {
-      const session: ScanSession = {
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        chargers: Number(chargers) || 0,
-        entries: sessionEntries
-      };
-      commitSessionToHistory(session);
-      triggerShare(session);
-    } else {
-      showToast("Scan session cancelled, no entries saved.", "info");
-    }
-    onExit();
- };
+    };
  
-  const addEntry = useCallback((entry: BatteryEntry) => {
-    if(sessionEntries.some(e => e.batteryId === entry.batteryId)) {
-        showToast("Battery already scanned in this session.", "info");
-        return;
-    }
-    setSessionEntries(prev => [entry, ...prev]);
-    if (!isListOpen) setIsListOpen(true);
-    showToast(`Scanned: ${entry.batteryId}`, "success");
-  }, [sessionEntries, showToast, isListOpen]);
+    const addEntry = useCallback((entry: BatteryEntry) => {
+        setSessionEntries(prev => {
+            if (prev.some(e => e.batteryId === entry.batteryId)) {
+                showToast("Battery already scanned in this session.", "info");
+                return prev;
+            }
+            if (!isListOpen) setIsListOpen(true);
+            showToast(`Scanned: ${entry.batteryId}`, "success");
+            return [entry, ...prev];
+        });
+    }, [isListOpen, showToast]);
 
- const clearSession = () => {
-    if (window.confirm("Are you sure you want to clear all scanned items? This cannot be undone.")) {
-      setSessionEntries([]);
-      showToast("Session cleared.", "info");
-    }
- };
+    const clearSession = () => {
+        if (window.confirm("Are you sure you want to clear all scanned items? This cannot be undone.")) {
+            setSessionEntries([]);
+            showToast("Session cleared.", "info");
+        }
+    };
 
- return (
-    <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: 'spring', stiffness: 400, damping: 40 }} className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col">
-       <header className="p-4 flex items-center justify-between border-b border-[var(--c-border)] shrink-0">
-        <h2 className="text-xl font-bold flex items-center gap-2"><Target size={20} className="text-[var(--c-accent)]" /> New Scan Session</h2>
-        <button onClick={onExit} className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer"> <X size={20} /> </button>
-       </header>
-       
-       <AnimatePresence mode="wait">
-        <motion.div key={stage} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col flex-grow overflow-hidden">
-            {stage === 'chargers' ? (
-                <div className="p-6 space-y-6">
-                    <h3 className="text-lg font-semibold">Step 1: Set Charger Count</h3>
-                    <Card className="p-6 space-y-2">
-                        <label htmlFor="charger-input" className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryCharging size={16}/> Total Chargers for this scan</label>
-                        <input id="charger-input" type="number" value={chargers} placeholder="e.g., 10" onChange={e => setChargers(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full text-2xl font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
-                    </Card>
-                    <button onClick={startScanning} disabled={chargers === ''} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"><ChevronsRight size={18}/>Start Scanning </button>
-                </div>
-            ) : (
-                <div className="flex flex-col flex-grow bg-black text-white relative h-[calc(100vh-65px)]">
-                    <AnimatePresence>
-                    {!isScannerActive ? (
-                        <motion.div key="starter" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-4 bg-black">
-                            <div className="w-[200px] h-[200px] flex items-center justify-center text-gray-600 rounded-3xl bg-gray-900/50 border border-dashed border-gray-700">
-                                <Target size={80} />
-                            </div>
-                            <h3 className="text-xl font-bold text-white">Ready to Scan</h3>
-                            <p className="text-center text-gray-400 max-w-xs">Tap the button below to start your camera and scan QR codes.</p>
-                            <button onClick={() => setIsScannerActive(true)} className="mt-4 w-full max-w-xs flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer">
-                                <QrCode size={18} /> Start Camera
-                            </button>
-                        </motion.div>
-                    ) : (
-                        <motion.div key="scanner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full">
-                            <div id="qr-code-reader" className="w-full h-full"></div>
-                            
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                                <div className="w-[250px] h-[250px] relative">
-                                    <div className="absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 border-white/80 rounded-tl-lg"></div>
-                                    <div className="absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 border-white/80 rounded-tr-lg"></div>
-                                    <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 border-white/80 rounded-bl-lg"></div>
-                                    <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 border-white/80 rounded-br-lg"></div>
-                                    <div className="absolute top-0 w-full h-0.5 bg-red-400/80 shadow-[0_0_10px_red] animate-scan"></div>
+    return (
+        <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: 'spring', stiffness: 400, damping: 40 }} className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col">
+            <header className="p-4 flex items-center justify-between border-b border-[var(--c-border)] shrink-0">
+                <h2 className="text-xl font-bold flex items-center gap-2"><Target size={20} className="text-[var(--c-accent)]" /> New Scan Session</h2>
+                <button onClick={onExit} className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer"> <X size={20} /> </button>
+            </header>
+            <div className="flex flex-col flex-grow overflow-hidden">
+                {stage === 'chargers' ? (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-6">
+                        <h3 className="text-lg font-semibold">Step 1: Set Charger Count</h3>
+                        <Card className="p-6 space-y-2">
+                            <label htmlFor="charger-input" className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryCharging size={16}/> Total Chargers for this scan</label>
+                            <input id="charger-input" type="number" value={chargers} placeholder="e.g., 10" onChange={e => setChargers(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full text-2xl font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
+                        </Card>
+                        <button onClick={startScanning} disabled={chargers === ''} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"><ChevronsRight size={18}/>Start Scanning </button>
+                    </motion.div>
+                ) : (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-grow flex flex-col items-center p-4 bg-black space-y-4">
+                        <div className="w-full max-w-[250px] h-[250px] bg-gray-900 rounded-lg relative flex items-center justify-center">
+                            {!cameraAllowed ? (
+                                <div className="text-center text-gray-500">
+                                    <Target size={60} />
+                                    <p className="mt-2 font-medium">Camera is off</p>
                                 </div>
-                            </div>
-
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[var(--c-bg)] via-[var(--c-bg)]/95 to-transparent z-20">
-                                <div className="p-4">
-                                    <div className="bg-[var(--c-bg-alt)] rounded-xl shadow-[var(--shadow-lg)]">
-                                        <div className="p-3 flex justify-between items-center cursor-pointer" onClick={() => setIsListOpen(!isListOpen)}>
-                                            <h3 className="font-semibold text-[var(--c-text)]">Scanned Items ({sessionEntries.length})</h3>
-                                            <div className="flex items-center gap-2">
-                                                {sessionEntries.length > 0 && (
-                                                    <button onClick={(e) => { e.stopPropagation(); clearSession(); }} className="flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[var(--c-danger)]/10 text-[var(--c-danger)] hover:bg-[var(--c-danger)]/20 transition-colors text-xs font-semibold cursor-pointer">
-                                                        <XCircle size={14} /> Clear All
-                                                    </button>
-                                                )}
-                                                <ChevronDown size={20} className={`text-[var(--c-text-alt)] transition-transform duration-300 ${isListOpen ? 'rotate-180' : ''}`} />
-                                            </div>
+                            ) : (
+                                <>
+                                    <div id="qr-code-reader" className="w-full h-full absolute inset-0"></div>
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                        <div className="w-full h-full relative">
+                                            <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-white/80 rounded-tl-lg"></div>
+                                            <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-white/80 rounded-tr-lg"></div>
+                                            <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-white/80 rounded-bl-lg"></div>
+                                            <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-white/80 rounded-br-lg"></div>
+                                            <div className="absolute top-0 w-full h-0.5 bg-red-400/80 shadow-[0_0_10px_red] animate-scan"></div>
                                         </div>
-                                        <AnimatePresence>
-                                        {isListOpen && (
-                                            <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                                                <div className="border-t border-[var(--c-border)] p-2 max-h-32 overflow-y-auto">
-                                                    {sessionEntries.length > 0 ? sessionEntries.map(entry => (
-                                                        <motion.div key={entry.batteryId} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between p-2 rounded-md">
-                                                            <div className="flex items-center gap-3"><BatteryFull className="text-[var(--c-success)]" size={18} /><span className="font-mono text-sm text-[var(--c-text)]">{entry.batteryId}</span></div>
-                                                            <span className="text-xs text-[var(--c-text-alt)]">{entry.timestamp}</span>
-                                                        </motion.div>
-                                                    )) : <p className="text-center text-xs text-[var(--c-text-alt)] p-4">No items scanned yet.</p>}
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                        </AnimatePresence>
                                     </div>
-                                    <button onClick={completeAndExit} className="w-full flex items-center justify-center gap-2 bg-[var(--c-success)] text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 mt-4 cursor-pointer">
-                                        <CheckCircle size={18}/> Complete & Save Scan
-                                    </button>
+                                    <ScannerEffect onScan={addEntry} />
+                                </>
+                            )}
+                        </div>
+                        <div className="w-full max-w-[400px]">
+                            <div className="bg-[var(--c-bg-alt)] rounded-xl shadow-[var(--shadow-lg)]">
+                                <div className="p-3 flex justify-between items-center cursor-pointer" onClick={() => setIsListOpen(!isListOpen)}>
+                                    <h3 className="font-semibold text-[var(--c-text)]">Scanned Items ({sessionEntries.length})</h3>
+                                    <div className="flex items-center gap-2">
+                                        {sessionEntries.length > 0 && (
+                                            <button onClick={(e) => { e.stopPropagation(); clearSession(); }} className="flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[var(--c-danger)]/10 text-[var(--c-danger)] hover:bg-[var(--c-danger)]/20 transition-colors text-xs font-semibold cursor-pointer">
+                                                <XCircle size={14} /> Clear All
+                                            </button>
+                                        )}
+                                        <ChevronDown size={20} className={`text-[var(--c-text-alt)] transition-transform duration-300 ${isListOpen ? 'rotate-180' : ''}`} />
+                                    </div>
                                 </div>
+                                <AnimatePresence>
+                                    {isListOpen && (
+                                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
+                                            <div className="border-t border-[var(--c-border)] p-2 max-h-32 overflow-y-auto">
+                                                {sessionEntries.length > 0 ? sessionEntries.map(entry => (
+                                                    <motion.div key={entry.batteryId} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between p-2 rounded-md">
+                                                        <div className="flex items-center gap-3"><BatteryFull className="text-[var(--c-success)]" size={18} /><span className="font-mono text-sm text-[var(--c-text)]">{entry.batteryId}</span></div>
+                                                        <span className="text-xs text-[var(--c-text-alt)]">{entry.timestamp}</span>
+                                                    </motion.div>
+                                                )) : <p className="text-center text-xs text-[var(--c-text-alt)] p-4">No items scanned yet.</p>}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
-                            <ScannerEffect onScan={addEntry} />
-                        </motion.div>
-                    )}
-                    </AnimatePresence>
+                            <button onClick={completeAndExit} className="w-full flex items-center justify-center gap-2 bg-[var(--c-success)] text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 mt-4 cursor-pointer">
+                                <CheckCircle size={18}/> Complete & Save Scan
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </div>
+            <Modal isOpen={stage === 'scanning' && showPermissionModal} hideCloseButton title="Camera Permission">
+                <div className="text-center">
+                    <p className="text-md text-[var(--c-text-alt)] mb-6">This app needs access to your camera to scan QR codes.</p>
+                    <button onClick={handleAllowCamera} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer">
+                        Allow Camera Access
+                    </button>
                 </div>
-            )}
+            </Modal>
         </motion.div>
-       </AnimatePresence>
-    </motion.div>
- )
-}
+    )
+};
 
 const ScannerEffect: FC<{onScan: (entry: BatteryEntry) => void}> = ({ onScan }) => {
     const { showToast } = useAppContext();
-    const scannerRef = useRef<Html5QrcodeScanner | null>(null);
-    
     useEffect(() => {
-        if (scannerRef.current) return;
-
-        try {
-            const scanner = new Html5QrcodeScanner('qr-code-reader', { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true, showTorchButtonIfSupported: true }, false);
-            scannerRef.current = scanner;
-
-            const handleSuccess: QrcodeSuccessCallback = (decodedText) => {
-                const newEntry = {
-                    batteryId: decodedText,
-                    timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-                };
-                onScan(newEntry);
-            };
-
-            const handleError = (errorMessage: string) => {
-                if (!errorMessage.includes("No QR code found")) {
-                  console.error("QR Scan Error:", errorMessage);
-                }
-            };
-
-            scanner.render(handleSuccess, handleError);
-
-        } catch (error) {
-            console.error("Scanner instantiation error:", error);
-            showToast("QR Scanner failed to start.", "error");
-        }
-
-        return () => {
-            if (scannerRef.current) {
-                scannerRef.current.clear().catch(error => {
-                    console.error("Failed to clear html5QrcodeScanner.", error);
-                });
-                scannerRef.current = null;
-            }
-        };
+        const scanner = new Html5QrcodeScanner('qr-code-reader', { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true }, false);
+        const handleSuccess: QrcodeSuccessCallback = (decodedText) => onScan({ batteryId: decodedText, timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) });
+        const handleError = (errorMessage: string) => { if (!errorMessage.includes("No QR code found")) { console.error("QR Scan Error:", errorMessage); }};
+        scanner.render(handleSuccess, handleError);
+        return () => { scanner.clear().catch(error => console.error("Failed to clear html5QrcodeScanner.", error)); };
     }, [onScan, showToast]);
-
     return null;
 };
 
 const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
-    const [isOpen, setIsOpen] = useState(false);
     const { triggerShare } = useAppContext();
+    const [isOpen, setIsOpen] = useState(false);
     return (
         <Card className="p-0 overflow-hidden">
-            <div className="w-full flex items-center justify-between p-4 text-left cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
-                <div className="flex items-center gap-3 flex-grow text-left">
+            <div className="flex items-center justify-between p-4 cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
+                <div className="flex items-center gap-4">
                     <Calendar size={20} className="text-[var(--c-accent)] shrink-0" />
-                    <div className="w-full">
-                        <p className="font-semibold">{new Date(session.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                        <p className="text-xs text-[var(--c-text-alt)] flex items-center gap-1.5"><Clock size={12}/>{session.timestamp}</p>
+                    <div>
+                        <p className="font-semibold text-base leading-tight">{new Date(session.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                        <p className="text-sm text-[var(--c-text-alt)] leading-tight flex items-center gap-1.5"><Clock size={12}/>{session.timestamp}</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
+                <div className="flex items-center gap-4">
+                    <div className="text-right hidden sm:block">
                         <p className="font-mono text-sm flex items-center gap-1.5 justify-end"><BatteryFull size={14}/> {session.entries.length}</p>
-                        <p className="font-mono text-xs text-[var(--c-text-alt)] flex items-center gap-1.5 justify-end"><BatteryCharging size={12}/> {session.chargers}</p>
+                        <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end"><BatteryCharging size={12}/> {session.chargers}</p>
                     </div>
                     <button onClick={(e) => { e.stopPropagation(); triggerShare(session); }} className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]"><Share2 size={16} /></button>
-                    <div className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]">
-                      <ChevronDown size={20} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-                    </div>
+                    <ChevronDown size={20} className={`text-[var(--c-text-alt)] transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
             </div>
             <AnimatePresence>
-            {isOpen && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-2 pt-0 space-y-1 border-t border-[var(--c-border)] mx-4 pb-4">
-                        <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">Scanned Batteries</h4>
-                        {session.entries.length > 0 ? session.entries.map(entry => (
-                            <div key={entry.batteryId} className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)]">
-                                <div className="flex items-center gap-3"><ChevronsRight size={16} className="text-[var(--c-text-alt)]" /><span className="font-mono text-sm">{entry.batteryId}</span></div>
-                                <span className="text-xs text-[var(--c-text-alt)]">{entry.timestamp}</span>
+                {isOpen && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                        <div className="p-2 pt-0 border-t border-[var(--c-border)] mx-4 pb-4">
+                             <div className="flex sm:hidden items-center justify-end gap-4 pt-3 pb-1">
+                                <p className="font-mono text-sm flex items-center gap-1.5 justify-end"><BatteryFull size={14}/> {session.entries.length}</p>
+                                <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end"><BatteryCharging size={12}/> {session.chargers}</p>
                             </div>
-                        )) : <p className="text-center text-xs text-[var(--c-text-alt)] p-2">No batteries in this session.</p>}
-                    </div>
-                </motion.div>
-            )}
+                            <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">Scanned Batteries</h4>
+                            {session.entries.length > 0 ? session.entries.map(entry => (
+                                <div key={entry.batteryId} className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)]">
+                                    <div className="flex items-center gap-3"><ChevronsRight size={16} className="text-[var(--c-text-alt)]" /><span className="font-mono text-sm">{entry.batteryId}</span></div>
+                                    <span className="text-xs text-[var(--c-text-alt)]">{entry.timestamp}</span>
+                                </div>
+                            )) : <p className="text-center text-xs text-[var(--c-text-alt)] p-2">No batteries in this session.</p>}
+                        </div>
+                    </motion.div>
+                )}
             </AnimatePresence>
         </Card>
     );
@@ -591,10 +499,9 @@ const HistoryView: FC = () => {
         if (!Array.isArray(stationHistory)) return [];
         return stationHistory.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     }, [scannedData, profile.stationId]);
-    
     if (!profile.stationId) { 
         return (
-            <div className="p-6 text-center flex items-center justify-center h-full">
+            <div className="p-6 text-center flex flex-col items-center justify-center flex-grow">
                 <Card className="p-8">
                     <User size={48} className="mx-auto text-[var(--c-accent)]" />
                     <h2 className="text-xl font-bold mt-4">Profile Not Set</h2>
@@ -605,70 +512,63 @@ const HistoryView: FC = () => {
     }
     return (
         <div className="p-4 space-y-4">
-          <h2 className="text-2xl font-extrabold flex items-center gap-3"><History size={24} /> Scan Session History</h2>
-          {sortedHistory.length > 0 ? (
-            sortedHistory.map((session, i) => <HistoryLogSummary key={`${session.date}-${session.timestamp}-${i}`} session={session} />)
-          ) : <div className="text-center py-16 text-[var(--c-text-alt)]"><History size={40} className="mx-auto mb-4" /><p className="font-semibold">No scan sessions recorded.</p><p className="text-sm">Tap 'Scan' to begin.</p></div>}
+            <h2 className="text-2xl font-extrabold flex items-center gap-3"><History size={24} /> Scan Session History</h2>
+            {sortedHistory.length > 0 ? (
+                sortedHistory.map((session) => <HistoryLogSummary key={session.date} session={session} />)
+            ) : <div className="text-center py-16 text-[var(--c-text-alt)]"><History size={40} className="mx-auto mb-4" /><p className="font-semibold">No scan sessions recorded.</p><p className="text-sm">Tap 'Scan' to begin.</p></div>}
         </div>
-      );
+    );
 };
 
 const MainView: FC = () => {
- const { profile, scannedData, setActiveView } = useAppContext();
- 
- const uniqueBatteries = useMemo(() => {
-    const stationHistory = scannedData[profile.stationId] || [];
-    if (!Array.isArray(stationHistory)) return 0;
-    const allEntries = stationHistory.flatMap(session => session.entries);
-    return new Set(allEntries.map(e => e.batteryId)).size;
- }, [scannedData, profile.stationId]);
-
- const totalChargersFromLastScan = useMemo(() => {
-    const stationHistory = scannedData[profile.stationId] || [];
-    if (!Array.isArray(stationHistory) || stationHistory.length === 0) return 0;
-    const sortedHistory = [...stationHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return sortedHistory[0]?.chargers ?? 0;
- }, [scannedData, profile.stationId]);
- 
- if (!profile.stationId) {
+    const { profile, scannedData, setActiveView } = useAppContext();
+    const { chargers, batteries } = useMemo(() => {
+        const stationHistory = scannedData[profile.stationId] || [];
+        if (!Array.isArray(stationHistory) || stationHistory.length === 0) return { chargers: 0, batteries: 0 };
+        const latestSession = [...stationHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+        const allEntries = stationHistory.flatMap(session => session.entries);
+        return { 
+            chargers: latestSession?.chargers ?? 0, 
+            batteries: new Set(allEntries.map(e => e.batteryId)).size 
+        };
+    }, [scannedData, profile.stationId]);
+    if (!profile.stationId) {
+        return (
+            <div className="p-6 text-center flex flex-col items-center justify-center flex-grow">
+                <Card className="p-8 max-w-sm">
+                    <User size={48} className="mx-auto text-[var(--c-accent)]" />
+                    <h2 className="text-xl font-bold mt-4">Welcome to {APP_NAME}!</h2>
+                    <p className="text-md text-[var(--c-text-alt)] mt-2 mb-6">To get started, please set up your station profile.</p>
+                    <button onClick={() => setActiveView('profile')} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer">Go to Profile <ChevronsRight size={18}/></button>
+                </Card>
+            </div>
+        );
+    }
     return (
-        <div className="p-6 text-center flex flex-col items-center justify-center h-full">
-            <Card className="p-8 max-w-sm">
-                <User size={48} className="mx-auto text-[var(--c-accent)]" />
-                <h2 className="text-xl font-bold mt-4">Welcome to {APP_NAME}!</h2>
-                <p className="text-md text-[var(--c-text-alt)] mt-2 mb-6">To get started, please set up your station profile.</p>
-                <button onClick={() => setActiveView('profile')} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer">Go to Profile <ChevronsRight size={18}/></button>
-            </Card>
+        <div className="p-4 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+                <Card className="p-4">
+                    <h3 className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryCharging size={16}/> Chargers</h3>
+                    <p className="text-3xl font-bold mt-1">{chargers}</p>
+                </Card>
+                <Card className="p-4">
+                    <h3 className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryFull size={16}/> Unique Batteries</h3>
+                    <p className="text-3xl font-bold mt-1">{batteries}</p>
+                </Card>
+            </div>
+            <div>
+                <h2 className="text-xl font-bold flex items-center gap-2 mb-3"><LayoutGrid size={20} /> Quick Access</h2>
+                <Card className="p-4 text-center text-[var(--c-text-alt)]">
+                    <p>More dashboard widgets coming soon! 🚀</p>
+                </Card>
+            </div>
         </div>
     );
- }
-
- return (
-    <div className="p-4 space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <Card className="p-4">
-            <h3 className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryCharging size={16}/> Chargers</h3>
-            <p className="text-3xl font-bold mt-1">{totalChargersFromLastScan}</p>
-        </Card>
-        <Card className="p-4">
-            <h3 className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryFull size={16}/> Unique Batteries</h3>
-            <p className="text-3xl font-bold mt-1">{uniqueBatteries}</p>
-        </Card>
-      </div>
-      <div>
-        <h2 className="text-xl font-bold flex items-center gap-2 mb-3"><LayoutGrid size={20} /> Quick Access</h2>
-        <Card className="p-4 text-center text-[var(--c-text-alt)]">
-            <p>More dashboard widgets coming soon! 🚀</p>
-        </Card>
-      </div>
-    </div>
- );
 };
 
 const ProfileView: FC = () => {
     const { profile, updateProfile, setActiveView, showToast, theme, toggleTheme } = useAppContext();
     const [localProfile, setLocalProfile] = useState<Profile>(profile);
-
     const handleSave = () => {
         if (!localProfile.stationName || !localProfile.stationId) {
             showToast("Please select a station from the preset list.", "error");
@@ -678,17 +578,16 @@ const ProfileView: FC = () => {
         showToast("Profile updated successfully!", "success");
         setActiveView('main');
     };
-    
     return (
         <div className="p-4 space-y-6 flex-grow">
             <h2 className="text-2xl font-extrabold flex items-center gap-3"><User size={24} /> Station Profile</h2>
             <Card className="p-6 space-y-5">
                 <div>
-                    <label className="text-sm font-medium text-[var(--c-text-alt)]">Select Your Station</label>
+                    <label className="text-sm font-medium text-[var(--c-text-alt)] mb-1 block">Select Your Station</label>
                     <CustomDropdown 
-                      options={STATIONS_DATA} 
-                      selected={localProfile} 
-                      onSelect={(s) => setLocalProfile({ ...localProfile, ...s })}
+                        options={STATIONS_DATA} 
+                        selected={localProfile} 
+                        onSelect={(s) => setLocalProfile({ ...localProfile, ...s })}
                     />
                 </div>
                 <div>
@@ -700,7 +599,6 @@ const ProfileView: FC = () => {
                     <input type="text" value={localProfile.stationId} disabled className="mt-1 w-full p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg outline-none opacity-60" />
                 </div>
             </Card>
-            
             <Card className="p-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -712,116 +610,107 @@ const ProfileView: FC = () => {
                     </button>
                 </div>
             </Card>
-
             <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"><Save size={18}/> Save Profile</button>
         </div>
     );
 };
 
-// --- ROOT APP COMPONENT ---
 const App: FC = () => {
- const [theme, setTheme] = useState<Theme>("light");
- const [toasts, setToasts] = useState<ToastItem[]>([]);
- const [isMounted, setIsMounted] = useState(false);
- const [profile, setProfile] = useState<Profile>({ stationId: "", stationName: "" });
- const [scannedData, setScannedData] = useState<ScannedData>({});
- const [activeView, setActiveView] = useState<ActiveView>('main');
- const [sharePayload, setSharePayload] = useState<SharePayload>(null);
+    const [theme, setTheme] = useState<Theme>("light");
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
+    const [isMounted, setIsMounted] = useState(false);
+    const [profile, setProfile] = useState<Profile>({ stationId: "", stationName: "" });
+    const [scannedData, setScannedData] = useState<ScannedData>({});
+    const [activeView, setActiveView] = useState<ActiveView>('main');
+    const [sharePayload, setSharePayload] = useState<SharePayload>(null);
 
- useEffect(() => {
-    setIsMounted(true);
-    setTheme((localStorage.getItem("app-theme") as Theme) || "light");
+    useEffect(() => {
+        setIsMounted(true);
+        const savedTheme = localStorage.getItem("app-theme") as Theme;
+        if (savedTheme) setTheme(savedTheme);
+        try {
+            const savedProfile = localStorage.getItem("app-profile");
+            if(savedProfile) setProfile(JSON.parse(savedProfile));
+        } catch (error) {
+            localStorage.removeItem("app-profile");
+        }
+        try {
+            const savedData = localStorage.getItem("scanned-data");
+            if(savedData) setScannedData(JSON.parse(savedData));
+        } catch (error) {
+            localStorage.removeItem("scanned-data");
+        }
+    }, []);
+
+    useEffect(() => { if (isMounted) document.documentElement.className = theme; }, [theme, isMounted]);
+
+    const toggleTheme = useCallback(() => {
+        setTheme(p => {
+            const newTheme = p === "light" ? "dark" : "light";
+            localStorage.setItem("app-theme", newTheme);
+            return newTheme;
+        });
+    }, []);
     
-    try {
-        const savedProfile = localStorage.getItem("app-profile");
-        if(savedProfile) setProfile(JSON.parse(savedProfile));
-    } catch (error) {
-        console.error("Failed to parse profile from localStorage", error);
-        localStorage.removeItem("app-profile");
-    }
+    const updateProfile = useCallback((newProfile: Profile) => {
+        setProfile(newProfile);
+        localStorage.setItem("app-profile", JSON.stringify(newProfile));
+    }, []);
 
-    try {
-        const savedData = localStorage.getItem("scanned-data");
-        if(savedData) setScannedData(JSON.parse(savedData));
-    } catch (error) {
-        console.error("Failed to parse scanned data from localStorage", error);
-        localStorage.removeItem("scanned-data");
-    }
- }, []);
+    const showToast = useCallback((message: string, type: ToastType = "info") => {
+        setToasts(p => [...p, { id: Date.now() + Math.random(), message, type }]);
+    }, []);
 
- useEffect(() => { if (isMounted) { document.documentElement.className = theme; } }, [theme, isMounted]);
+    const commitSessionToHistory = useCallback((session: ScanSession) => {
+        if (!profile.stationId) { showToast("Cannot save, profile not set.", "error"); return; }
+        setScannedData(prevData => {
+            const stationHistory = prevData[profile.stationId] || [];
+            const newHistory = [session, ...(Array.isArray(stationHistory) ? stationHistory : [])];
+            const newData = { ...prevData, [profile.stationId]: newHistory };
+            localStorage.setItem("scanned-data", JSON.stringify(newData));
+            return newData;
+        });
+    }, [profile.stationId, showToast]);
 
- const updateProfile = useCallback((newProfile: Profile) => {
-    setProfile(newProfile);
-    localStorage.setItem("app-profile", JSON.stringify(newProfile));
- }, []);
+    const triggerShare = useCallback((payload: SharePayload) => setSharePayload(payload), []);
+    const dismissToast = useCallback((id: number) => setToasts(p => p.filter(t => t.id !== id)), []);
 
- const showToast = useCallback((message: string, type: ToastType = "info") => {
-    setToasts(p => [...p, { id: Date.now() + Math.random(), message, type }]);
- }, []);
-
- const commitSessionToHistory = useCallback((session: ScanSession) => {
-    if (!profile.stationId) { showToast("Cannot save, profile not set.", "error"); return; }
-    setScannedData(prevData => {
-        const stationHistory = prevData[profile.stationId] || [];
-        const validHistory = Array.isArray(stationHistory) ? stationHistory : [];
-        const updatedHistory = [session, ...validHistory];
-        const newData = { ...prevData, [profile.stationId]: updatedHistory };
-        localStorage.setItem("scanned-data", JSON.stringify(newData));
-        return newData;
-    });
- }, [profile.stationId, showToast]);
-
- const triggerShare = useCallback((payload: SharePayload) => setSharePayload(payload), []);
+    if (!isMounted) return <div style={{ visibility: 'hidden' }} />;
  
- const toggleTheme = useCallback(() => {
-    setTheme(p => {
-        const newTheme = p === "light" ? "dark" : "light";
-        localStorage.setItem("app-theme", newTheme);
-        return newTheme;
-    });
- }, []);
+    const appContextValue: AppContextType = {
+        theme, toggleTheme,
+        profile, updateProfile,
+        showToast,
+        scannedData, commitSessionToHistory,
+        activeView, setActiveView,
+        triggerShare,
+    };
 
- const dismissToast = useCallback((id: number) => {
-    setToasts(p => p.filter(t => t.id !== id))
- }, []);
+    const views: Record<ActiveView, React.ReactNode> = {
+        main: <MainView />,
+        history: <HistoryView />,
+        profile: <ProfileView />
+    };
 
- if (!isMounted) return <div style={{ visibility: 'hidden' }} />;
- 
- const appContextValue: AppContextType = {
-    theme, toggleTheme,
-    profile, updateProfile,
-    showToast,
-    scannedData, commitSessionToHistory,
-    activeView, setActiveView,
-    triggerShare,
- };
-
- const views: Record<ActiveView, React.ReactNode> = {
-    main: <MainView />,
-    history: <HistoryView />,
-    profile: <ProfileView />
- };
-
- return (
-    <AppContext.Provider value={appContextValue}>
-      <link rel="stylesheet" href={FONT_URL} />
-      <GlobalStyles />
-      <div className="flex flex-col h-screen antialiased max-w-md mx-auto bg-[var(--c-bg)] border-x border-[var(--c-border)]">
-          <Header />
-          <main className="flex-grow overflow-y-auto pb-24">
-            <AnimatePresence mode="wait">
-              <motion.div key={activeView} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
-                  {views[activeView]}
-              </motion.div>
-            </AnimatePresence>
-          </main>
-          <BottomNav />
-          <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-          <ShareModal payload={sharePayload} onClose={() => setSharePayload(null)} />
-      </div>
-    </AppContext.Provider>
- );
+    return (
+        <AppContext.Provider value={appContextValue}>
+            <link rel="stylesheet" href={FONT_URL} />
+            <GlobalStyles />
+            <div className="flex flex-col h-screen antialiased max-w-md mx-auto bg-[var(--c-bg)] border-x border-[var(--c-border)]">
+                <Header />
+                <main className="flex-grow overflow-y-auto pb-24 flex flex-col">
+                    <AnimatePresence mode="wait">
+                        <motion.div key={activeView} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="flex-grow flex flex-col">
+                            {views[activeView]}
+                        </motion.div>
+                    </AnimatePresence>
+                </main>
+                <BottomNav />
+                <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+                <ShareModal payload={sharePayload} onClose={() => setSharePayload(null)} />
+            </div>
+        </AppContext.Provider>
+    );
 };
 
 export default App;
