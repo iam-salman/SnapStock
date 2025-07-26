@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, createContext, useContext, ReactNode, useCallback, FC, useRef, useMemo } from "react";
+import React, { useState, useEffect, createContext, useContext, useCallback, useRef, useMemo, type ReactNode, type FC } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-// This is the corrected line
-import { Html5QrcodeScanner, type QrcodeSuccessCallback, type Html5QrcodeResult } from "html5-qrcode";
+import { Html5QrcodeScanner, type QrcodeSuccessCallback } from "html5-qrcode";
 import {
   Power, QrCode, Share2, X, MapPin, ChevronDown, BatteryFull, CheckCircle, Copy, AlertTriangle, Info, Sun, Moon, User, Save, History, LayoutGrid, ChevronsRight, Target, BatteryCharging, Calendar, Clock
 } from "lucide-react";
@@ -57,7 +56,7 @@ const useAppContext = () => {
 
 // --- GLOBAL STYLES & HELPER FUNCTIONS ---
 const GlobalStyles: FC = () => (
-  <style jsx global>{`
+  <style>{`
     :root {
       --font-primary: 'Outfit', sans-serif;
       --radius: 0.75rem;
@@ -94,21 +93,16 @@ const GlobalStyles: FC = () => (
       color: var(--c-text);
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      overscroll-behavior: none;
     }
     .transition-all { transition: all 0.2s ease-in-out; }
+    #qr-code-reader {
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--c-border);
+    }
   `}</style>
 );
-
-const formatDateHeader = (dateString: string): string => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return `Today, ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}`;
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-};
 
 // --- REUSABLE UI COMPONENTS ---
 const Card: FC<{ children: ReactNode; className?: string }> = ({ children, className = "" }) => (
@@ -273,7 +267,7 @@ const ShareModal: FC<{ payload: SharePayload, onClose: () => void }> = ({ payloa
 
     const shareText = useMemo(() => {
         if (!payload) return "";
-        return `🔋 *Battery Dost - Scan Report* 🔋\n\n*Station:* ${profile.stationName}\n*ID:* ${profile.stationId}\n*Date:* ${new Date(payload.date).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})} at ${payload.timestamp}\n\n*Total Chargers:* ${payload.chargers}\n*Batteries Scanned:* ${payload.entries.length}\n\n*--- Scanned IDs ---*\n${payload.entries.map(e => e.batteryId).join('\n') || 'No batteries in this session.'}`;
+        return `🔋 *${APP_NAME} - Scan Report* 🔋\n\n*Station:* ${profile.stationName}\n*ID:* ${profile.stationId}\n*Date:* ${new Date(payload.date).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})} at ${payload.timestamp}\n\n*Total Chargers:* ${payload.chargers}\n*Batteries Scanned:* ${payload.entries.length}\n\n*--- Scanned IDs ---*\n${payload.entries.map(e => e.batteryId).join('\n') || 'No batteries in this session.'}`;
     }, [payload, profile]);
     
     const whatsappLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
@@ -333,14 +327,14 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
     onExit();
   };
   
-  const addEntry = (entry: BatteryEntry) => {
+  const addEntry = useCallback((entry: BatteryEntry) => {
     if(sessionEntries.some(e => e.batteryId === entry.batteryId)) {
         showToast("Battery already scanned in this session.", "info");
         return;
     }
     setSessionEntries(prev => [entry, ...prev]);
     showToast(`Scanned: ${entry.batteryId}`, "success");
-  }
+  }, [sessionEntries, showToast]);
 
   return (
     <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: 'spring', stiffness: 400, damping: 40 }} className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col">
@@ -358,13 +352,15 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
                         <label htmlFor="charger-input" className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"><BatteryCharging size={16}/> Total Chargers for this scan</label>
                         <input id="charger-input" type="number" value={chargers} placeholder="e.g., 10" onChange={e => setChargers(e.target.value === '' ? '' : parseInt(e.target.value))} className="w-full text-2xl font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
                     </Card>
-                    <button onClick={startScanning} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90">Start Scanning <ChevronsRight size={18}/></button>
+                    <button onClick={startScanning} disabled={chargers === ''} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"><ChevronsRight size={18}/>Start Scanning </button>
                 </div>
             ) : (
                 <div className="flex flex-col flex-grow h-[calc(100vh-65px)]"> {/* vh minus header height */}
-                    <div id="qr-code-reader" className="w-full max-w-sm mx-auto p-4 shrink-0"></div>
+                    <div className="p-4 shrink-0">
+                      <div id="qr-code-reader" className="w-full max-w-sm mx-auto"></div>
+                    </div>
                     <div className="flex-grow p-4 pt-0 space-y-3 overflow-y-auto">
-                        <h3 className="font-semibold">Scanned in this session ({sessionEntries.length})</h3>
+                        <h3 className="font-semibold px-1">Scanned in this session ({sessionEntries.length})</h3>
                         {sessionEntries.length > 0 ? (
                            <AnimatePresence>
                            {sessionEntries.map(entry => (
@@ -374,7 +370,7 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
                             </motion.div>
                            ))}
                            </AnimatePresence>
-                        ) : <p className="text-sm text-center text-[var(--c-text-alt)] py-8">Point camera at QR code.</p>}
+                        ) : <div className="text-sm text-center text-[var(--c-text-alt)] py-8 border border-dashed border-[var(--c-border)] rounded-lg">Point camera at a QR code.</div>}
                     </div>
                     <div className="p-4 border-t border-[var(--c-border)] shrink-0">
                         <button onClick={completeAndExit} className="w-full flex items-center justify-center gap-2 bg-[var(--c-success)] text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90"><CheckCircle size={18}/> Complete & Save Scan</button>
@@ -390,12 +386,15 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
 
 const ScannerEffect: FC<{onScan: (entry: BatteryEntry) => void}> = ({ onScan }) => {
     const { showToast } = useAppContext();
+    const scannerRef = useRef<Html5QrcodeScanner | null>(null);
     
     useEffect(() => {
-        let scanner: Html5QrcodeScanner | null = null;
+        if (scannerRef.current) return; // Already initialized
+
         try {
-            scanner = new Html5QrcodeScanner('qr-code-reader', { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true }, false);
-            
+            const scanner = new Html5QrcodeScanner('qr-code-reader', { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true, showTorchButtonIfSupported: true }, false);
+            scannerRef.current = scanner;
+
             const handleSuccess: QrcodeSuccessCallback = (decodedText) => {
                 const newEntry = {
                     batteryId: decodedText,
@@ -404,20 +403,25 @@ const ScannerEffect: FC<{onScan: (entry: BatteryEntry) => void}> = ({ onScan }) 
                 onScan(newEntry);
             };
 
-            scanner.render(handleSuccess, undefined).catch(err => {
-                console.error("Scanner render error:", err);
-                showToast("Camera could not be started.", "error");
-            });
+            const handleError = (errorMessage: string) => {
+                // Ignore common errors like "QR code not found" to avoid spamming the user.
+                // console.error("QR Scan Error:", errorMessage);
+            };
+
+            scanner.render(handleSuccess, handleError);
+
         } catch (error) {
             console.error("Scanner instantiation error:", error);
             showToast("QR Scanner failed to start.", "error");
         }
 
         return () => {
-            if (scanner && scanner.isScanning) {
-                scanner.clear().catch(error => {
+            if (scannerRef.current) {
+                scannerRef.current.clear().catch(error => {
+                    // This error is expected if the scanner is already stopped or failed to start.
                     console.error("Failed to clear html5QrcodeScanner.", error);
                 });
+                scannerRef.current = null;
             }
         };
     }, [onScan, showToast]);
@@ -427,34 +431,39 @@ const ScannerEffect: FC<{onScan: (entry: BatteryEntry) => void}> = ({ onScan }) 
 
 const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const { triggerShare } = useAppContext();
     return (
         <Card className="p-0 overflow-hidden">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between p-4 hover:bg-[var(--c-bg)] transition-all text-left">
-                <div className="flex items-center gap-3">
-                    <Calendar size={20} className="text-[var(--c-accent)]" />
-                    <div>
+            <div className="w-full flex items-center justify-between p-4 text-left">
+                <button onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-3 flex-grow text-left">
+                    <Calendar size={20} className="text-[var(--c-accent)] shrink-0" />
+                    <div className="w-full">
                         <p className="font-semibold">{new Date(session.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                         <p className="text-xs text-[var(--c-text-alt)] flex items-center gap-1.5"><Clock size={12}/>{session.timestamp}</p>
                     </div>
-                </div>
-                <div className="flex items-center gap-4">
+                </button>
+                <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
                         <p className="font-mono text-sm flex items-center gap-1.5 justify-end"><BatteryFull size={14}/> {session.entries.length}</p>
                         <p className="font-mono text-xs text-[var(--c-text-alt)] flex items-center gap-1.5 justify-end"><BatteryCharging size={12}/> {session.chargers}</p>
                     </div>
-                    <ChevronDown size={20} className={`text-[var(--c-text-alt)] transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+                    <button onClick={() => triggerShare(session)} className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]"><Share2 size={16} /></button>
+                    <button onClick={() => setIsOpen(!isOpen)} className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]">
+                      <ChevronDown size={20} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+                    </button>
                 </div>
-            </button>
+            </div>
             <AnimatePresence>
             {isOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="p-2 pt-0 space-y-1">
-                        {session.entries.map(entry => (
-                            <div key={entry.batteryId} className="flex items-center justify-between p-3 rounded-md">
+                    <div className="p-2 pt-0 space-y-1 border-t border-[var(--c-border)] mx-4 pb-4">
+                        <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">Scanned Batteries</h4>
+                        {session.entries.length > 0 ? session.entries.map(entry => (
+                            <div key={entry.batteryId} className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)]">
                                 <div className="flex items-center gap-3"><ChevronsRight size={16} className="text-[var(--c-text-alt)]" /><span className="font-mono text-sm">{entry.batteryId}</span></div>
                                 <span className="text-xs text-[var(--c-text-alt)]">{entry.timestamp}</span>
                             </div>
-                        ))}
+                        )) : <p className="text-center text-xs text-[var(--c-text-alt)] p-2">No batteries in this session.</p>}
                     </div>
                 </motion.div>
             )}
@@ -477,7 +486,7 @@ const HistoryView: FC = () => {
                 <Card className="p-8">
                     <User size={48} className="mx-auto text-[var(--c-accent)]" />
                     <h2 className="text-xl font-bold mt-4">Profile Not Set</h2>
-                    <p className="text-md text-[var(--c-text-alt)] mt-2">Go to the Profile tab to view history.</p>
+                    <p className="text-md text-[var(--c-text-alt)] mt-2">Go to the Profile tab to select your station.</p>
                 </Card>
             </div>
         ); 
@@ -487,13 +496,13 @@ const HistoryView: FC = () => {
           <h2 className="text-2xl font-extrabold flex items-center gap-3"><History size={24} /> Scan Session History</h2>
           {sortedHistory.length > 0 ? (
             sortedHistory.map((session, i) => <HistoryLogSummary key={`${session.date}-${session.timestamp}-${i}`} session={session} />)
-          ) : <div className="text-center py-16 text-[var(--c-text-alt)]"><History size={40} className="mx-auto mb-4" /><p className="font-semibold">No scan sessions recorded.</p></div>}
+          ) : <div className="text-center py-16 text-[var(--c-text-alt)]"><History size={40} className="mx-auto mb-4" /><p className="font-semibold">No scan sessions recorded.</p><p className="text-sm">Tap 'Start Scan' to begin.</p></div>}
         </div>
       );
 };
 
 const MainView: FC = () => {
-  const { profile, scannedData } = useAppContext();
+  const { profile, scannedData, setActiveView } = useAppContext();
   
   const uniqueBatteries = useMemo(() => {
     const stationHistory = scannedData[profile.stationId] || [];
@@ -511,11 +520,12 @@ const MainView: FC = () => {
   
   if (!profile.stationId) {
     return (
-        <div className="p-6 text-center flex items-center justify-center h-full">
-            <Card className="p-8">
+        <div className="p-6 text-center flex flex-col items-center justify-center h-full">
+            <Card className="p-8 max-w-sm">
                 <User size={48} className="mx-auto text-[var(--c-accent)]" />
-                <h2 className="text-xl font-bold mt-4">Welcome to Battery Dost!</h2>
-                <p className="text-md text-[var(--c-text-alt)] mt-2">Please go to the Profile tab to set up your station.</p>
+                <h2 className="text-xl font-bold mt-4">Welcome to {APP_NAME}!</h2>
+                <p className="text-md text-[var(--c-text-alt)] mt-2 mb-6">To get started, please set up your station profile.</p>
+                <button onClick={() => setActiveView('profile')} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90">Go to Profile <ChevronsRight size={18}/></button>
             </Card>
         </div>
     );
@@ -536,7 +546,7 @@ const MainView: FC = () => {
       <div>
         <h2 className="text-xl font-bold flex items-center gap-2 mb-3"><LayoutGrid size={20} /> Quick Access</h2>
         <Card className="p-4 text-center text-[var(--c-text-alt)]">
-            <p>More dashboard widgets coming soon!</p>
+            <p>More dashboard widgets coming soon! 🚀</p>
         </Card>
       </div>
     </div>
@@ -544,12 +554,12 @@ const MainView: FC = () => {
 };
 
 const ProfileView: FC = () => {
-    const { profile, updateProfile, setActiveView, showToast } = useAppContext();
+    const { profile, updateProfile, setActiveView, showToast, theme, toggleTheme } = useAppContext();
     const [localProfile, setLocalProfile] = useState<Profile>(profile);
 
     const handleSave = () => {
         if (!localProfile.stationName || !localProfile.stationId) {
-            showToast("Station Name and ID cannot be empty.", "error");
+            showToast("Please select a station from the preset list.", "error");
             return;
         }
         updateProfile(localProfile);
@@ -562,18 +572,35 @@ const ProfileView: FC = () => {
             <h2 className="text-2xl font-extrabold flex items-center gap-3"><User size={24} /> Station Profile</h2>
             <Card className="p-6 space-y-5">
                 <div>
+                    <label className="text-sm font-medium text-[var(--c-text-alt)]">Select Your Station</label>
+                    <CustomDropdown 
+                      options={STATIONS_DATA} 
+                      selected={localProfile} 
+                      onSelect={(s) => setLocalProfile({ ...localProfile, ...s })}
+                    />
+                </div>
+                <div>
                     <label className="text-sm font-medium text-[var(--c-text-alt)]">Station Name</label>
-                    <input type="text" value={localProfile.stationName} onChange={e => setLocalProfile(p => ({...p, stationName: e.target.value}))} className="mt-1 w-full p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
+                    <input type="text" value={localProfile.stationName} disabled className="mt-1 w-full p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg outline-none opacity-60" />
                 </div>
                 <div>
                     <label className="text-sm font-medium text-[var(--c-text-alt)]">Station ID</label>
-                    <input type="text" value={localProfile.stationId} onChange={e => setLocalProfile(p => ({...p, stationId: e.target.value}))} className="mt-1 w-full p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
-                </div>
-                <div>
-                    <label className="text-sm font-medium text-[var(--c-text-alt)]">Change Station (Preset)</label>
-                    <CustomDropdown options={STATIONS_DATA} selected={localProfile} onSelect={(s) => setLocalProfile(p => ({...p, ...s}))}/>
+                    <input type="text" value={localProfile.stationId} disabled className="mt-1 w-full p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg outline-none opacity-60" />
                 </div>
             </Card>
+            
+            <Card className="p-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        {theme === 'light' ? <Sun className="text-[var(--c-text-alt)]" /> : <Moon className="text-[var(--c-text-alt)]" />}
+                        <span className="font-medium">Appearance</span>
+                    </div>
+                    <button onClick={toggleTheme} className="font-semibold text-sm text-[var(--c-accent)] bg-[var(--c-accent-glow)] py-1.5 px-3 rounded-md">
+                        Switch to {theme === 'light' ? 'Dark' : 'Light'}
+                    </button>
+                </div>
+            </Card>
+
             <button onClick={handleSave} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90"><Save size={18}/> Save Profile</button>
         </div>
     );
@@ -591,11 +618,26 @@ const App: FC = () => {
 
   useEffect(() => {
     setIsMounted(true);
+    // Load theme
     setTheme((localStorage.getItem("app-theme") as Theme) || "light");
-    const savedProfile = localStorage.getItem("app-profile");
-    if(savedProfile) setProfile(JSON.parse(savedProfile));
-    const savedData = localStorage.getItem("scanned-data");
-    if(savedData) setScannedData(JSON.parse(savedData));
+    
+    // Load profile with safety check
+    try {
+        const savedProfile = localStorage.getItem("app-profile");
+        if(savedProfile) setProfile(JSON.parse(savedProfile));
+    } catch (error) {
+        console.error("Failed to parse profile from localStorage", error);
+        localStorage.removeItem("app-profile");
+    }
+
+    // Load scanned data with safety check
+    try {
+        const savedData = localStorage.getItem("scanned-data");
+        if(savedData) setScannedData(JSON.parse(savedData));
+    } catch (error) {
+        console.error("Failed to parse scanned data from localStorage", error);
+        localStorage.removeItem("scanned-data");
+    }
   }, []);
 
   useEffect(() => { if (isMounted) { document.documentElement.className = theme; } }, [theme, isMounted]);
@@ -613,7 +655,6 @@ const App: FC = () => {
     if (!profile.stationId) { showToast("Cannot save, profile not set.", "error"); return; }
     setScannedData(prevData => {
         const stationHistory = prevData[profile.stationId] || [];
-        // Defensive check to handle old data format
         const validHistory = Array.isArray(stationHistory) ? stationHistory : [];
         const updatedHistory = [session, ...validHistory];
         const newData = { ...prevData, [profile.stationId]: updatedHistory };
@@ -657,11 +698,11 @@ const App: FC = () => {
     <AppContext.Provider value={appContextValue}>
       <link rel="stylesheet" href={FONT_URL} />
       <GlobalStyles />
-      <div className="flex flex-col h-screen antialiased">
+      <div className="flex flex-col h-screen antialiased max-w-md mx-auto bg-[var(--c-bg)] border-x border-[var(--c-border)]">
           <Header />
           <main className="flex-grow overflow-y-auto pb-24">
             <AnimatePresence mode="wait">
-              <motion.div key={activeView} initial={{ opacity: 0, x: activeView === 'main' ? 0 : 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
+              <motion.div key={activeView} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
                   {views[activeView]}
               </motion.div>
             </AnimatePresence>
