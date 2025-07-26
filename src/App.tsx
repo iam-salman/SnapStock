@@ -184,7 +184,7 @@ const Modal: FC<{
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="bg-[var(--c-bg)] rounded-xl shadow-[var(--shadow-lg)] w-full max-w-sm border border-[var(--c-border)]"
           onClick={(e) => e.stopPropagation()}
         >
@@ -232,7 +232,7 @@ const ToastContainer: FC<{
         initial={{ opacity: 0, y: -20, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, x: 30, scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        transition={{ type: "spring", stiffness: 350, damping: 25 }}
         className="flex items-center bg-[var(--c-bg-alt)] text-[var(--c-text)] py-3 px-4 rounded-lg shadow-[var(--shadow-lg)] border border-[var(--c-border)] min-w-[320px]"
       >
         <Icon
@@ -514,8 +514,12 @@ const Scanner: FC<{
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file || !html5QrCodeRef.current) return;
+
       try {
-        const decodedText = await html5QrCodeRef.current.scanFile(file, false);
+        const decodedText = await html5QrCodeRef.current.scanFile(
+          file,
+          false
+        );
         onScan({
           batteryId: decodedText,
           timestamp: new Date().toLocaleTimeString("en-IN", {
@@ -524,7 +528,12 @@ const Scanner: FC<{
           }),
         });
       } catch (err) {
-        showToast("No QR code found in image.", "error");
+        console.error("File Scan Error:", err);
+        showToast("QR not found. Use a clear image & try again.", "error");
+      } finally {
+        if (event.target) {
+          event.target.value = "";
+        }
       }
     },
     [onScan, showToast]
@@ -619,6 +628,8 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
   const [isListOpen, setIsListOpen] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(true);
   const [scannerState, setScannerState] = useState<ScannerState>("idle");
+  const [lastScannedEntry, setLastScannedEntry] =
+    useState<BatteryEntry | null>(null);
   const { commitSessionToHistory, triggerShare, showToast, profile } =
     useAppContext();
 
@@ -655,6 +666,7 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
     }
     onExit();
   };
+
   const addEntry = useCallback(
     (entry: BatteryEntry) => {
       setSessionEntries((prev) => {
@@ -663,12 +675,22 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
           return prev;
         }
         if (!isListOpen) setIsListOpen(true);
-        showToast(`Scanned: ${entry.batteryId}`, "success");
+        setLastScannedEntry(entry);
         return [entry, ...prev];
       });
     },
     [isListOpen, showToast]
   );
+
+  const handleContinueScanning = () => {
+    setLastScannedEntry(null);
+  };
+
+  const handleCompleteFromModal = () => {
+    setLastScannedEntry(null);
+    completeAndExit();
+  };
+
   const clearSession = () => {
     if (
       window.confirm(
@@ -685,7 +707,7 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
-      transition={{ type: "spring", stiffness: 400, damping: 40 }}
+      transition={{ type: "spring", stiffness: 350, damping: 40 }}
       className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col"
     >
       <header className="p-4 flex items-center justify-between border-b border-[var(--c-border)] shrink-0">
@@ -873,6 +895,42 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
           </motion.div>
         )}
       </div>
+
+      <Modal
+        isOpen={!!lastScannedEntry}
+        onClose={handleContinueScanning}
+        title="Scan Successful"
+      >
+        {lastScannedEntry && (
+          <div className="text-center space-y-4">
+            <CheckCircle
+              size={48}
+              className="mx-auto text-[var(--c-success)]"
+            />
+            <p className="text-md text-[var(--c-text-alt)]">
+              Successfully scanned battery:
+            </p>
+            <p className="font-mono text-xl font-bold p-3 bg-[var(--c-bg)] rounded-lg border border-[var(--c-border)]">
+              {lastScannedEntry.batteryId}
+            </p>
+            <div className="flex flex-col space-y-3 pt-2">
+              <button
+                onClick={handleContinueScanning}
+                className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"
+              >
+                <ScanLine size={18} /> Continue Scanning
+              </button>
+              <button
+                onClick={handleCompleteFromModal}
+                className="w-full text-center bg-[var(--c-bg)] text-[var(--c-text)] font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 border border-[var(--c-border)] hover:bg-[var(--c-border)] cursor-pointer"
+              >
+                <CheckCircle size={16} /> Complete Session
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal
         isOpen={stage === "scanning" && showPermissionModal}
         hideCloseButton
@@ -1291,7 +1349,7 @@ const App: FC = () => {
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
               className="flex-grow flex flex-col"
             >
               {views[activeView]}
