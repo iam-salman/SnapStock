@@ -8,6 +8,8 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  forwardRef,
+  useImperativeHandle,
   type ReactNode,
   type FC,
 } from "react";
@@ -484,141 +486,215 @@ const ShareModal: FC<{ payload: SharePayload; onClose: () => void }> = ({
 };
 
 type ScannerState = "idle" | "loading" | "scanning" | "error";
-
-const Scanner: FC<{
+interface ScannerProps {
   setScannerState: (state: ScannerState) => void;
   onScan: (entry: BatteryEntry) => void;
   showToast: (msg: string, type?: ToastType) => void;
-}> = ({ setScannerState, onScan, showToast }) => {
-  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [isTorchSupported, setIsTorchSupported] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+}
+interface ScannerControls {
+  pause: (freeze?: boolean) => void;
+  resume: () => void;
+}
 
-  const toggleTorch = useCallback(async () => {
-    if (html5QrCodeRef.current && isTorchSupported) {
-      try {
-        const torchState = !isTorchOn;
-        await html5QrCodeRef.current.applyVideoConstraints({
-          advanced: [{ torch: torchState }],
-        });
-        setIsTorchOn(torchState);
-      } catch (err) {
-        console.error("Torch Error:", err);
-        showToast("Could not control torch.", "error");
-      }
-    }
-  }, [isTorchOn, isTorchSupported, showToast]);
+const Scanner = forwardRef<ScannerControls, ScannerProps>(
+  ({ setScannerState, onScan, showToast }, ref) => {
+    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+    const [isTorchOn, setIsTorchOn] = useState(false);
+    const [isTorchSupported, setIsTorchSupported] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file || !html5QrCodeRef.current) return;
+    useImperativeHandle(ref, () => ({
+      pause: (freeze = true) => {
+        if (html5QrCodeRef.current?.isScanning) {
+          html5QrCodeRef.current.pause(freeze);
+        }
+      },
+      resume: () => {
+        if (html5QrCodeRef.current?.isScanning) {
+          html5QrCodeRef.current.resume();
+        }
+      },
+    }));
 
-      try {
-        const decodedText = await html5QrCodeRef.current.scanFile(
-          file,
-          false
-        );
-        onScan({
-          batteryId: decodedText,
-          timestamp: new Date().toLocaleTimeString("en-IN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        });
-      } catch (err) {
-        console.error("File Scan Error:", err);
-        showToast("QR not found. Use a clear image & try again.", "error");
-      } finally {
-        if (event.target) {
-          event.target.value = "";
+    const toggleTorch = useCallback(async () => {
+      if (html5QrCodeRef.current && isTorchSupported) {
+        try {
+          const torchState = !isTorchOn;
+          await html5QrCodeRef.current.applyVideoConstraints({
+            advanced: [{ torch: torchState }],
+          });
+          setIsTorchOn(torchState);
+        } catch (err) {
+          console.error("Torch Error:", err);
+          showToast("Could not control torch.", "error");
         }
       }
-    },
-    [onScan, showToast]
-  );
+    }, [isTorchOn, isTorchSupported, showToast]);
 
-  useEffect(() => {
-    const qrCode = new Html5Qrcode("video-container", { verbose: false });
-    html5QrCodeRef.current = qrCode;
-    let didCancel = false;
+    const handleFileChange = useCallback(
+      async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !html5QrCodeRef.current) return;
 
-    const startCamera = async () => {
-      try {
-        await qrCode.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 220, height: 220 } },
-          (decodedText) =>
-            onScan({
-              batteryId: decodedText,
-              timestamp: new Date().toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
+        const processImage = (imageFile: File): Promise<File> => {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const image = new Image();
+              image.onload = () => {
+                const canvas = document.createElement("canvas");
+                const MAX_DIMENSION = 1024;
+                let { width, height } = image;
+
+                if (width > height && width > MAX_DIMENSION) {
+                  height *= MAX_DIMENSION / width;
+                  width = MAX_DIMENSION;
+                } else if (height > MAX_DIMENSION) {
+                  width *= MAX_DIMENSION / height;
+                  height = MAX_DIMENSION;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                if (!ctx)
+                  return reject(new Error("Failed to get canvas context."));
+
+                ctx.drawImage(image, 0, 0, width, height);
+                canvas.toBlob(
+                  (blob) => {
+                    if (!blob)
+                      return reject(new Error("Canvas blob creation failed."));
+                    const processedFile = new File([blob], imageFile.name, {
+                      type: "image/png",
+                      lastModified: Date.now(),
+                    });
+                    resolve(processedFile);
+                  },
+                  "image/png",
+                  1.0
+                );
+              };
+              image.onerror = (err) => reject(err);
+              image.src = e.target?.result as string;
+            };
+            reader.onerror = (err) => reject(err);
+            reader.readAsDataURL(imageFile);
+          });
+        };
+
+        showToast("Processing image...", "info");
+
+        try {
+          const processedFile = await processImage(file);
+          const decodedText = await html5QrCodeRef.current.scanFile(
+            processedFile,
+            false
+          );
+          onScan({
+            batteryId: decodedText,
+            timestamp: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
             }),
-          (_errorMessage) => {}
-        );
-
-        if (didCancel) return;
-
-        const capabilities = qrCode.getRunningTrackCapabilities();
-        if (capabilities.torch) {
-          setIsTorchSupported(true);
+          });
+        } catch (err) {
+          console.error("File Scan Error:", err);
+          showToast(
+            "QR code not found. Please use a clear, cropped image.",
+            "error"
+          );
+        } finally {
+          if (event.target) {
+            event.target.value = "";
+          }
         }
-        setScannerState("scanning");
-      } catch (err) {
-        console.error("Camera Start Error:", err);
-        if (!didCancel) {
-          setScannerState("error");
+      },
+      [onScan, showToast]
+    );
+
+    useEffect(() => {
+      const qrCode = new Html5Qrcode("video-container", { verbose: false });
+      html5QrCodeRef.current = qrCode;
+      let didCancel = false;
+
+      const startCamera = async () => {
+        try {
+          await qrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 220, height: 220 } },
+            (decodedText) =>
+              onScan({
+                batteryId: decodedText,
+                timestamp: new Date().toLocaleTimeString("en-IN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              }),
+            (_errorMessage) => {}
+          );
+
+          if (didCancel) return;
+
+          const capabilities = qrCode.getRunningTrackCapabilities();
+          if (capabilities.torch) {
+            setIsTorchSupported(true);
+          }
+          setScannerState("scanning");
+        } catch (err) {
+          console.error("Camera Start Error:", err);
+          if (!didCancel) {
+            setScannerState("error");
+          }
         }
-      }
-    };
+      };
 
-    startCamera();
+      startCamera();
 
-    return () => {
-      didCancel = true;
-      const scanner = html5QrCodeRef.current;
-      if (scanner && scanner.isScanning) {
-        scanner
-          .stop()
-          .catch((err) => console.error("Error stopping scanner:", err));
-      }
-    };
-  }, [setScannerState, onScan]);
+      return () => {
+        didCancel = true;
+        const scanner = html5QrCodeRef.current;
+        if (scanner && scanner.isScanning) {
+          scanner
+            .stop()
+            .catch((err) => console.error("Error stopping scanner:", err));
+        }
+      };
+    }, [setScannerState, onScan]);
 
-  return (
-    <>
-      <div id="video-container" className="w-full h-full"></div>
-      <div className="absolute top-2 right-2 z-20 flex flex-col gap-2">
-        {isTorchSupported && (
+    return (
+      <>
+        <div id="video-container" className="w-full h-full"></div>
+        <div className="absolute top-2 right-2 z-20 flex flex-col gap-2">
+          {isTorchSupported && (
+            <button
+              onClick={toggleTorch}
+              className="w-10 h-10 flex items-center justify-center bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors cursor-pointer backdrop-blur-sm"
+            >
+              {isTorchOn ? <ZapOff size={20} /> : <Zap size={20} />}
+            </button>
+          )}
+        </div>
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20">
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+          />
           <button
-            onClick={toggleTorch}
-            className="w-10 h-10 flex items-center justify-center bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors cursor-pointer backdrop-blur-sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-colors backdrop-blur-sm text-sm font-semibold cursor-pointer"
           >
-            {isTorchOn ? <ZapOff size={20} /> : <Zap size={20} />}
+            <Upload size={16} /> Scan from Image
           </button>
-        )}
-      </div>
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20">
-        <input
-          type="file"
-          accept="image/*"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-4 py-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-colors backdrop-blur-sm text-sm font-semibold cursor-pointer"
-        >
-          <Upload size={16} /> Scan from Image
-        </button>
-      </div>
-    </>
-  );
-};
+        </div>
+      </>
+    );
+  }
+);
+Scanner.displayName = "Scanner";
 
 const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
   type Stage = "chargers" | "scanning";
@@ -632,6 +708,7 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
     useState<BatteryEntry | null>(null);
   const { commitSessionToHistory, triggerShare, showToast, profile } =
     useAppContext();
+  const scannerControlsRef = useRef<ScannerControls | null>(null);
 
   const startScanning = () => {
     if (!profile.stationId) {
@@ -669,21 +746,33 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
 
   const addEntry = useCallback(
     (entry: BatteryEntry) => {
-      setSessionEntries((prev) => {
-        if (prev.some((e) => e.batteryId === entry.batteryId)) {
-          showToast("Battery already scanned.", "info");
-          return prev;
-        }
-        if (!isListOpen) setIsListOpen(true);
-        setLastScannedEntry(entry);
-        return [entry, ...prev];
-      });
+      // First, check if the entry is a duplicate.
+      const isDuplicate = sessionEntries.some(
+        (e) => e.batteryId === entry.batteryId
+      );
+
+      // If it's a duplicate, show a toast and do nothing else.
+      // The scanner remains active to find a new, unique code.
+      if (isDuplicate) {
+        showToast("Battery already scanned.", "info");
+        return;
+      }
+
+      // If it's a new entry, pause the scanner and show the modal.
+      scannerControlsRef.current?.pause(true);
+      setSessionEntries((prev) => [entry, ...prev]);
+      if (!isListOpen) setIsListOpen(true);
+      setLastScannedEntry(entry);
     },
-    [isListOpen, showToast]
+    [sessionEntries, isListOpen, showToast]
   );
 
   const handleContinueScanning = () => {
     setLastScannedEntry(null);
+    // Add a small delay to prevent instant re-scan of the same QR code
+    setTimeout(() => {
+      scannerControlsRef.current?.resume();
+    }, 100);
   };
 
   const handleCompleteFromModal = () => {
@@ -797,6 +886,7 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
               )}
               {scannerState !== "idle" && scannerState !== "error" && (
                 <Scanner
+                  ref={scannerControlsRef}
                   setScannerState={setScannerState}
                   onScan={addEntry}
                   showToast={showToast}
