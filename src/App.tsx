@@ -14,6 +14,7 @@ import React, {
   type FC,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+// --- FIXED: Removed non-existent Html5QrcodeError type ---
 import { Html5Qrcode } from "html5-qrcode";
 import {
   Share2,
@@ -42,6 +43,8 @@ import {
   Zap,
   Upload,
   ZapOff,
+  PlusCircle,
+  Trash2,
 } from "lucide-react";
 
 declare global {
@@ -72,10 +75,11 @@ type ActiveView = "main" | "history" | "profile";
 type ToastType = "success" | "error" | "info";
 type Profile = { stationId: string; stationName: string };
 type BatteryEntry = { batteryId: string; timestamp: string };
+type InventoryItem = { name: string; count: number };
 type ScanSession = {
   date: string;
   timestamp: string;
-  chargers: number;
+  items: InventoryItem[];
   entries: BatteryEntry[];
 };
 type ScannedData = { [stationId: string]: ScanSession[] };
@@ -422,26 +426,36 @@ const ShareModal: FC<{ payload: SharePayload; onClose: () => void }> = ({
 }) => {
   const { profile, showToast } = useAppContext();
   const isOpen = !!payload;
+  
   const shareText = useMemo(() => {
     if (!payload) return "";
-    return `🔋 *${APP_NAME} - Scan Report* 🔋\n\n*Station:* ${
-      profile.stationName
-    }\n*ID:* ${profile.stationId}\n*Date:* ${new Date(
-      payload.date
-    ).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })} at ${payload.timestamp}\n\n*Total Chargers:* ${
-      payload.chargers
-    }\n*Batteries Scanned:* ${
-      payload.entries.length
-    }\n\n*--- Scanned IDs ---*\n${
-      payload.entries.map((e) => e.batteryId).join("\n") ||
-      "No batteries in this session."
-    }`;
+
+    const itemsList = payload.items.length > 0
+      ? payload.items.map(item => `- ${item.name}: ${item.count}`).join('\n')
+      : "No inventory items recorded.";
+      
+    const batteryList = payload.entries.length > 0
+      ? payload.entries.map(e => `\`${e.batteryId}\``).join('\n')
+      : "No batteries in this session.";
+
+    return `*Battery Dost - Scan Report* ⚡\n\n` +
+           `*Station Details*\n` +
+           `🏢 *Name:* ${profile.stationName}\n` +
+           `🆔 *ID:* ${profile.stationId}\n` +
+           `📅 *Date:* ${new Date(payload.date).toLocaleDateString("en-GB", { day: '2-digit', month: 'short', year: 'numeric' })}\n` +
+           `⏰ *Time:* ${payload.timestamp}\n\n` +
+           `*Inventory Count*\n` +
+           `${itemsList}\n\n` +
+           `*Scanned Batteries (${payload.entries.length})*\n` +
+           `──────────────────\n` +
+           `${batteryList}\n` +
+           `──────────────────\n` +
+           `Total Scanned: *${payload.entries.length}*`;
+           
   }, [payload, profile]);
+
   const whatsappLink = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(shareText).then(
       () => {
@@ -485,208 +499,119 @@ const ShareModal: FC<{ payload: SharePayload; onClose: () => void }> = ({
   );
 };
 
+// --- SCANNER COMPONENT ---
 type ScannerState = "idle" | "loading" | "scanning" | "error";
 interface ScannerProps {
-  setScannerState: (state: ScannerState) => void;
-  onScan: (entry: BatteryEntry) => void;
+  onScanSuccess: (decodedText: string) => void;
+  onStateChange?: (state: ScannerState) => void;
   showToast: (msg: string, type?: ToastType) => void;
 }
 interface ScannerControls {
-  pause: (freeze?: boolean) => void;
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+  pause: () => void;
   resume: () => void;
 }
 
 const Scanner = forwardRef<ScannerControls, ScannerProps>(
-  ({ setScannerState, onScan, showToast }, ref) => {
+  ({ onScanSuccess, onStateChange, showToast }, ref) => {
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
     const [isTorchOn, setIsTorchOn] = useState(false);
     const [isTorchSupported, setIsTorchSupported] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const setState = (state: ScannerState) => {
+        onStateChange?.(state);
+    }
+
     useImperativeHandle(ref, () => ({
-      pause: (freeze = true) => {
-        if (html5QrCodeRef.current?.isScanning) {
-          html5QrCodeRef.current.pause(freeze);
+      start: async () => {
+        if (html5QrCodeRef.current && !html5QrCodeRef.current.isScanning) {
+          setState("loading");
+          try {
+            await html5QrCodeRef.current.start(
+              { facingMode: "environment" },
+              { fps: 10, qrbox: { width: 220, height: 220 } },
+              onScanSuccess,
+              () => {}
+            );
+            const capabilities = html5QrCodeRef.current.getRunningTrackCapabilities();
+            if (capabilities.torch) setIsTorchSupported(true);
+            setState("scanning");
+          } catch (err) {
+            console.error("Camera Start Error:", err);
+            setState("error");
+          }
         }
+      },
+      stop: async () => {
+        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+          try {
+            await html5QrCodeRef.current.stop();
+            setState("idle");
+          } catch (err) {
+            console.error("Error stopping scanner:", err);
+          }
+        }
+      },
+      pause: () => {
+        if (html5QrCodeRef.current?.isScanning) html5QrCodeRef.current.pause(true);
       },
       resume: () => {
-        if (html5QrCodeRef.current?.isScanning) {
-          html5QrCodeRef.current.resume();
-        }
+        if (html5QrCodeRef.current?.isScanning) html5QrCodeRef.current.resume();
       },
     }));
+
+    useEffect(() => {
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode("video-container", { verbose: false });
+      }
+      return () => {
+        if (html5QrCodeRef.current?.isScanning) {
+            html5QrCodeRef.current.stop().catch(err => console.error("Cleanup stop error", err));
+        }
+      }
+    }, []);
 
     const toggleTorch = useCallback(async () => {
       if (html5QrCodeRef.current && isTorchSupported) {
         try {
           const torchState = !isTorchOn;
-          await html5QrCodeRef.current.applyVideoConstraints({
-            advanced: [{ torch: torchState }],
-          });
+          await html5QrCodeRef.current.applyVideoConstraints({ advanced: [{ torch: torchState }] });
           setIsTorchOn(torchState);
         } catch (err) {
-          console.error("Torch Error:", err);
           showToast("Could not control torch.", "error");
         }
       }
     }, [isTorchOn, isTorchSupported, showToast]);
 
-    const handleFileChange = useCallback(
-      async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file || !html5QrCodeRef.current) return;
-
-        const processImage = (imageFile: File): Promise<File> => {
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const image = new Image();
-              image.onload = () => {
-                const canvas = document.createElement("canvas");
-                const MAX_DIMENSION = 1024;
-                let { width, height } = image;
-
-                if (width > height && width > MAX_DIMENSION) {
-                  height *= MAX_DIMENSION / width;
-                  width = MAX_DIMENSION;
-                } else if (height > MAX_DIMENSION) {
-                  width *= MAX_DIMENSION / height;
-                  height = MAX_DIMENSION;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext("2d");
-                if (!ctx)
-                  return reject(new Error("Failed to get canvas context."));
-
-                ctx.drawImage(image, 0, 0, width, height);
-                canvas.toBlob(
-                  (blob) => {
-                    if (!blob)
-                      return reject(new Error("Canvas blob creation failed."));
-                    const processedFile = new File([blob], imageFile.name, {
-                      type: "image/png",
-                      lastModified: Date.now(),
-                    });
-                    resolve(processedFile);
-                  },
-                  "image/png",
-                  1.0
-                );
-              };
-              image.onerror = (err) => reject(err);
-              image.src = e.target?.result as string;
-            };
-            reader.onerror = (err) => reject(err);
-            reader.readAsDataURL(imageFile);
-          });
-        };
-
-        showToast("Processing image...", "info");
-
-        try {
-          const processedFile = await processImage(file);
-          const decodedText = await html5QrCodeRef.current.scanFile(
-            processedFile,
-            false
-          );
-          onScan({
-            batteryId: decodedText,
-            timestamp: new Date().toLocaleTimeString("en-IN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-          });
-        } catch (err) {
-          console.error("File Scan Error:", err);
-          showToast(
-            "QR code not found. Please use a clear, cropped image.",
-            "error"
-          );
-        } finally {
-          if (event.target) {
-            event.target.value = "";
-          }
+        if (file && html5QrCodeRef.current) {
+            showToast("Processing image...", "info");
+            try {
+                const decodedText = await html5QrCodeRef.current.scanFile(file, false);
+                onScanSuccess(decodedText);
+            } catch (err) {
+                showToast("QR code not found in image.", "error");
+            }
         }
-      },
-      [onScan, showToast]
-    );
-
-    useEffect(() => {
-      const qrCode = new Html5Qrcode("video-container", { verbose: false });
-      html5QrCodeRef.current = qrCode;
-      let didCancel = false;
-
-      const startCamera = async () => {
-        try {
-          await qrCode.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 220, height: 220 } },
-            (decodedText) =>
-              onScan({
-                batteryId: decodedText,
-                timestamp: new Date().toLocaleTimeString("en-IN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-              }),
-            (_errorMessage) => {}
-          );
-
-          if (didCancel) return;
-
-          const capabilities = qrCode.getRunningTrackCapabilities();
-          if (capabilities.torch) {
-            setIsTorchSupported(true);
-          }
-          setScannerState("scanning");
-        } catch (err) {
-          console.error("Camera Start Error:", err);
-          if (!didCancel) {
-            setScannerState("error");
-          }
-        }
-      };
-
-      startCamera();
-
-      return () => {
-        didCancel = true;
-        const scanner = html5QrCodeRef.current;
-        if (scanner && scanner.isScanning) {
-          scanner
-            .stop()
-            .catch((err) => console.error("Error stopping scanner:", err));
-        }
-      };
-    }, [setScannerState, onScan]);
+        if (event.target) event.target.value = "";
+    }
 
     return (
       <>
         <div id="video-container" className="w-full h-full"></div>
         <div className="absolute top-2 right-2 z-20 flex flex-col gap-2">
           {isTorchSupported && (
-            <button
-              onClick={toggleTorch}
-              className="w-10 h-10 flex items-center justify-center bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors cursor-pointer backdrop-blur-sm"
-            >
+            <button onClick={toggleTorch} className="w-10 h-10 flex items-center justify-center bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors cursor-pointer backdrop-blur-sm">
               {isTorchOn ? <ZapOff size={20} /> : <Zap size={20} />}
             </button>
           )}
         </div>
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20">
-          <input
-            type="file"
-            accept="image/*"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-colors backdrop-blur-sm text-sm font-semibold cursor-pointer"
-          >
+          <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-colors backdrop-blur-sm text-sm font-semibold cursor-pointer">
             <Upload size={16} /> Scan from Image
           </button>
         </div>
@@ -696,19 +621,72 @@ const Scanner = forwardRef<ScannerControls, ScannerProps>(
 );
 Scanner.displayName = "Scanner";
 
+const AddItemModal: FC<{ isOpen: boolean; onClose: () => void; onAdd: (name: string) => void; }> = ({ isOpen, onClose, onAdd }) => {
+    const [itemName, setItemName] = useState("");
+    
+    const handleSave = () => {
+        if (itemName.trim()) {
+            onAdd(itemName.trim());
+            onClose();
+        }
+    };
+    
+    useEffect(() => {
+        if(isOpen) setItemName("");
+    }, [isOpen]);
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Add New Inventory Item">
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="item-name-input" className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2 mb-1">
+                        <Boxes size={16} /> Item Name
+                    </label>
+                    <input
+                        id="item-name-input"
+                        type="text"
+                        value={itemName}
+                        placeholder="e.g., Cables"
+                        autoFocus
+                        onChange={(e) => setItemName(e.target.value)}
+                        onKeyUp={(e) => e.key === 'Enter' && handleSave()}
+                        className="w-full text-lg font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none"
+                    />
+                </div>
+                <button
+                    onClick={handleSave}
+                    className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!itemName.trim()}
+                >
+                    <PlusCircle size={18} /> Add Item
+                </button>
+            </div>
+        </Modal>
+    );
+};
+
 const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
-  type Stage = "chargers" | "scanning";
-  const [stage, setStage] = useState<Stage>("chargers");
-  const [chargers, setChargers] = useState<number | "">("");
+  type Stage = "items" | "scanning";
+  const [stage, setStage] = useState<Stage>("items");
+  const [items, setItems] = useState<{ name: string; count: number | "" }[]>([ { name: "Chargers", count: "" } ]);
   const [sessionEntries, setSessionEntries] = useState<BatteryEntry[]>([]);
   const [isListOpen, setIsListOpen] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(true);
   const [scannerState, setScannerState] = useState<ScannerState>("idle");
-  const [lastScannedEntry, setLastScannedEntry] =
-    useState<BatteryEntry | null>(null);
-  const { commitSessionToHistory, triggerShare, showToast, profile } =
-    useAppContext();
-  const scannerControlsRef = useRef<ScannerControls | null>(null);
+  const [lastScannedEntry, setLastScannedEntry] = useState<BatteryEntry | null>(null);
+  const [isProcessingScan, setIsProcessingScan] = useState(false);
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const { commitSessionToHistory, triggerShare, showToast, profile } = useAppContext();
+  const scannerRef = useRef<ScannerControls | null>(null);
+  const sessionEntriesRef = useRef(sessionEntries);
+
+  useEffect(() => {
+    sessionEntriesRef.current = sessionEntries;
+  }, [sessionEntries]);
+
+  const triggerHapticFeedback = () => {
+    if (navigator.vibrate) navigator.vibrate(200);
+  };
 
   const startScanning = () => {
     if (!profile.stationId) {
@@ -718,267 +696,167 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
     }
     setStage("scanning");
   };
-  const handleAllowCamera = () => {
+  
+  const handleItemCountChange = (index: number, value: string) => {
+    const newItems = [...items];
+    newItems[index].count = value === "" ? "" : parseInt(value, 10);
+    setItems(newItems);
+  };
+
+  const handleConfirmAddItem = (newItemName: string) => {
+    if (items.some(item => item.name.toLowerCase() === newItemName.toLowerCase())) {
+        showToast("An item with this name already exists.", "error");
+        return;
+    }
+    setItems([...items, { name: newItemName, count: "" }]);
+  };
+  
+  const handleRemoveItem = (indexToRemove: number) => {
+    setItems(items.filter((_, index) => index !== indexToRemove));
+  };
+
+  const isStartDisabled = useMemo(() => {
+    return items.some(item => item.count === "" || isNaN(Number(item.count)));
+  }, [items]);
+
+  const handleAllowCamera = async () => {
     setShowPermissionModal(false);
-    setScannerState("loading");
+    await scannerRef.current?.start();
   };
-  const handleRetry = () => {
-    setScannerState("loading");
+
+  const gracefulExit = () => {
+    scannerRef.current?.stop();
+    onExit();
   };
-  const completeAndExit = () => {
-    if (sessionEntries.length > 0) {
-      const session: ScanSession = {
-        date: new Date().toISOString(),
-        timestamp: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        chargers: Number(chargers) || 0,
-        entries: sessionEntries,
-      };
-      commitSessionToHistory(session);
-      triggerShare(session);
+
+  const completeAndSave = () => {
+    scannerRef.current?.stop();
+    if (sessionEntries.length > 0 || items.some(i => Number(i.count) >= 0)) {
+        const finalItems = items
+          .map(item => ({ name: item.name, count: Number(item.count) || 0 }))
+          .filter(item => item.count >= 0 && item.name !== '');
+
+        const session: ScanSession = {
+            date: new Date().toISOString(),
+            timestamp: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+            items: finalItems,
+            entries: sessionEntries,
+        };
+        commitSessionToHistory(session);
+        triggerShare(session);
     } else {
-      showToast("Scan session cancelled, no entries saved.", "info");
+        showToast("Session cancelled, no entries saved.", "info");
     }
     onExit();
   };
 
-  const addEntry = useCallback(
-    (entry: BatteryEntry) => {
-      // First, check if the entry is a duplicate.
-      const isDuplicate = sessionEntries.some(
-        (e) => e.batteryId === entry.batteryId
-      );
+  const handleScanSuccess = (decodedText: string) => {
+    if (isProcessingScan) return;
+    setIsProcessingScan(true);
+    scannerRef.current?.pause();
+    
+    const isDuplicate = sessionEntriesRef.current.some(e => e.batteryId === decodedText);
+    if (isDuplicate) {
+      showToast("Battery already scanned.", "info");
+      setTimeout(() => {
+        setIsProcessingScan(false);
+        scannerRef.current?.resume();
+      }, 100);
+      return;
+    }
 
-      // If it's a duplicate, show a toast and do nothing else.
-      // The scanner remains active to find a new, unique code.
-      if (isDuplicate) {
-        showToast("Battery already scanned.", "info");
-        return;
-      }
+    triggerHapticFeedback();
 
-      // If it's a new entry, pause the scanner and show the modal.
-      scannerControlsRef.current?.pause(true);
-      setSessionEntries((prev) => [entry, ...prev]);
-      if (!isListOpen) setIsListOpen(true);
-      setLastScannedEntry(entry);
-    },
-    [sessionEntries, isListOpen, showToast]
-  );
-
+    const newEntry: BatteryEntry = {
+      batteryId: decodedText,
+      timestamp: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    };
+    setSessionEntries(prev => [newEntry, ...prev]);
+    if (!isListOpen) setIsListOpen(true);
+    setLastScannedEntry(newEntry);
+  };
+  
   const handleContinueScanning = () => {
     setLastScannedEntry(null);
-    // Add a small delay to prevent instant re-scan of the same QR code
     setTimeout(() => {
-      scannerControlsRef.current?.resume();
+        setIsProcessingScan(false);
+        scannerRef.current?.resume();
     }, 100);
   };
 
   const handleCompleteFromModal = () => {
     setLastScannedEntry(null);
-    completeAndExit();
+    completeAndSave();
   };
 
   const clearSession = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to clear all scanned items? This cannot be undone."
-      )
-    ) {
+    if (window.confirm("Are you sure? This will clear all scanned items.")) {
       setSessionEntries([]);
       showToast("Session cleared.", "info");
     }
   };
+  
+  useEffect(() => {
+    return () => {
+        scannerRef.current?.stop();
+    }
+  }, []);
 
   return (
-    <motion.div
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ type: "spring", stiffness: 350, damping: 40 }}
-      className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col"
-    >
+    <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 350, damping: 40 }} className="fixed inset-0 bg-[var(--c-bg)] z-[100] flex flex-col">
       <header className="p-4 flex items-center justify-between border-b border-[var(--c-border)] shrink-0">
         <h2 className="text-xl font-bold flex items-center gap-2">
-          <Target size={20} className="text-[var(--c-accent)]" /> New Scan
-          Session
+          <Target size={20} className="text-[var(--c-accent)]" /> New Scan Session
         </h2>
-        <button
-          onClick={onExit}
-          className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer"
-        >
+        <button onClick={gracefulExit} className="p-1.5 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)] cursor-pointer">
           <X size={20} />
         </button>
       </header>
       <div className="flex flex-col flex-grow overflow-hidden">
-        {stage === "chargers" ? (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="p-6 space-y-6"
-          >
-            <h3 className="text-lg font-semibold">Step 1: Set Charger Count</h3>
-            <Card className="p-6 space-y-2">
-              <label
-                htmlFor="charger-input"
-                className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2"
-              >
-                <BatteryCharging size={16} /> Total Chargers
-              </label>
-              <input
-                id="charger-input"
-                type="number"
-                value={chargers}
-                placeholder="e.g., 10"
-                onChange={(e) =>
-                  setChargers(
-                    e.target.value === "" ? "" : parseInt(e.target.value)
-                  )
-                }
-                className="w-full text-2xl font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none"
-              />
+        {stage === "items" ? (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-6 overflow-y-auto">
+            <h3 className="text-lg font-semibold">Step 1: Log Inventory Counts</h3>
+            <Card className="p-4 space-y-4">
+              {items.map((item, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <div className="flex-grow">
+                    <label htmlFor={`item-input-${index}`} className="text-sm font-medium text-[var(--c-text-alt)] flex items-center gap-2 mb-1">
+                      <Boxes size={16} /> {item.name}
+                    </label>
+                    <input id={`item-input-${index}`} type="number" value={item.count} placeholder="e.g., 10" onChange={(e) => handleItemCountChange(index, e.target.value)} className="w-full text-xl font-bold p-3 bg-[var(--c-bg)] border border-[var(--c-border)] rounded-lg focus:border-[var(--c-accent)] focus:shadow-[0_0_0_3px] focus:shadow-[var(--c-accent-glow)] outline-none" />
+                  </div>
+                  {index > 0 && (
+                    <button onClick={() => handleRemoveItem(index)} className="p-2 mt-7 text-[var(--c-danger)] hover:bg-[var(--c-danger)]/10 rounded-full">
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => setIsAddItemModalOpen(true)} className="w-full flex items-center justify-center gap-2 text-[var(--c-accent)] font-semibold py-2.5 rounded-lg border-2 border-dashed border-[var(--c-accent)]/50 hover:bg-[var(--c-accent)]/10 transition-colors cursor-pointer mt-2">
+                <PlusCircle size={18} /> Add Item
+              </button>
             </Card>
-            <button
-              onClick={startScanning}
-              disabled={chargers === ""}
-              className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <ChevronsRight size={18} />
-              Start Scanning
+            <button onClick={startScanning} disabled={isStartDisabled} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+              <ChevronsRight size={18} /> Start Scanning
             </button>
           </motion.div>
         ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex-grow flex flex-col items-center p-4 bg-black space-y-4"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-grow flex flex-col items-center p-4 bg-black space-y-4">
             <div className="w-[250px] h-[250px] bg-gray-900 rounded-lg relative flex items-center justify-center overflow-hidden">
-              {(scannerState === "idle" || scannerState === "loading") && (
-                <div className="text-center text-gray-400 flex items-center flex-col">
-                  <Clock
-                    size={40}
-                    className={scannerState === "loading" ? "animate-spin" : ""}
-                  />
-                  <p className="mt-3 font-medium">
-                    {scannerState === "loading"
-                      ? "Starting Camera..."
-                      : "Camera Idle"}
-                  </p>
-                </div>
-              )}
-              {scannerState === "error" && (
-                <div className="text-center text-red-400 p-4">
-                  <XCircle size={40} />
-                  <p className="mt-3 font-semibold">Camera Failed</p>
-                  <p className="text-xs text-gray-400">
-                    Please check permissions and ensure it's not in use.
-                  </p>
-                  <button
-                    onClick={handleRetry}
-                    className="mt-4 px-4 py-1.5 bg-white/10 text-white text-sm font-semibold rounded-md hover:bg-white/20"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {scannerState !== "idle" && scannerState !== "error" && (
-                <Scanner
-                  ref={scannerControlsRef}
-                  setScannerState={setScannerState}
-                  onScan={addEntry}
-                  showToast={showToast}
-                />
-              )}
-              {scannerState === "scanning" && (
-                <div className="absolute inset-0 pointer-events-none z-10">
-                  <div className="w-full h-full relative">
-                    <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-white/80 rounded-tl-lg"></div>
-                    <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-white/80 rounded-tr-lg"></div>
-                    <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-white/80 rounded-bl-lg"></div>
-                    <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-white/80 rounded-br-lg"></div>
-                    <div className="absolute top-0 w-full h-0.5 bg-red-400/80 shadow-[0_0_10px_red] animate-scan"></div>
-                  </div>
-                </div>
-              )}
+              {scannerState === "loading" && (<div className="text-center text-gray-400 flex items-center flex-col"> <Clock size={40} className="animate-spin" /> <p className="mt-3 font-medium">Starting Camera...</p> </div>)}
+              {scannerState === "error" && (<div className="text-center text-red-400 p-4"> <XCircle size={40} /> <p className="mt-3 font-semibold">Camera Failed</p> <p className="text-xs text-gray-400">Please check permissions and try again.</p> </div>)}
+              <Scanner ref={scannerRef} onScanSuccess={handleScanSuccess} onStateChange={setScannerState} showToast={showToast} />
+              {scannerState === "scanning" && (<div className="absolute inset-0 pointer-events-none z-10"> <div className="w-full h-full relative"> <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-white/80 rounded-tl-lg"></div> <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-white/80 rounded-tr-lg"></div> <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-white/80 rounded-bl-lg"></div> <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-white/80 rounded-br-lg"></div> <div className="absolute top-0 w-full h-0.5 bg-red-400/80 shadow-[0_0_10px_red] animate-scan"></div> </div> </div>)}
             </div>
             <div className="w-full max-w-[400px]">
               <div className="bg-[var(--c-bg-alt)] rounded-xl shadow-[var(--shadow-lg)]">
-                <div
-                  className="p-3 flex justify-between items-center cursor-pointer"
-                  onClick={() => setIsListOpen(!isListOpen)}
-                >
-                  <h3 className="font-semibold text-[var(--c-text)]">
-                    Scanned Items ({sessionEntries.length})
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {sessionEntries.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearSession();
-                        }}
-                        className="flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[var(--c-danger)]/10 text-[var(--c-danger)] hover:bg-[var(--c-danger)]/20 transition-colors text-xs font-semibold cursor-pointer"
-                      >
-                        <XCircle size={14} /> Clear All
-                      </button>
-                    )}
-                    <ChevronDown
-                      size={20}
-                      className={`text-[var(--c-text-alt)] transition-transform duration-300 ${
-                        isListOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </div>
+                <div className="p-3 flex justify-between items-center cursor-pointer" onClick={() => setIsListOpen(!isListOpen)}>
+                  <h3 className="font-semibold text-[var(--c-text)]"> Scanned Items ({sessionEntries.length}) </h3>
+                  <div className="flex items-center gap-2"> {sessionEntries.length > 0 && (<button onClick={(e) => { e.stopPropagation(); clearSession(); }} className="flex items-center gap-1.5 py-1 px-2.5 rounded-md bg-[var(--c-danger)]/10 text-[var(--c-danger)] hover:bg-[var(--c-danger)]/20 transition-colors text-xs font-semibold cursor-pointer"> <XCircle size={14} /> Clear All </button>)} <ChevronDown size={20} className={`text-[var(--c-text-alt)] transition-transform duration-300 ${ isListOpen ? "rotate-180" : "" }`} /> </div>
                 </div>
-                <AnimatePresence>
-                  {isListOpen && (
-                    <motion.div
-                      initial={{ height: 0 }}
-                      animate={{ height: "auto" }}
-                      exit={{ height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="border-t border-[var(--c-border)] p-2 max-h-32 overflow-y-auto">
-                        {sessionEntries.length > 0 ? (
-                          sessionEntries.map((entry) => (
-                            <motion.div
-                              key={entry.batteryId}
-                              layout
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              className="flex items-center justify-between p-2 rounded-md"
-                            >
-                              <div className="flex items-center gap-3">
-                                <BatteryFull
-                                  className="text-[var(--c-success)]"
-                                  size={18}
-                                />
-                                <span className="font-mono text-sm text-[var(--c-text)]">
-                                  {entry.batteryId}
-                                </span>
-                              </div>
-                              <span className="text-xs text-[var(--c-text-alt)]">
-                                {entry.timestamp}
-                              </span>
-                            </motion.div>
-                          ))
-                        ) : (
-                          <p className="text-center text-xs text-[var(--c-text-alt)] p-4">
-                            No items scanned yet.
-                          </p>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <AnimatePresence> {isListOpen && (<motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="overflow-hidden"> <div className="border-t border-[var(--c-border)] p-2 max-h-32 overflow-y-auto"> {sessionEntries.length > 0 ? (sessionEntries.map((entry) => (<motion.div key={entry.batteryId} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between p-2 rounded-md"> <div className="flex items-center gap-3"> <BatteryFull className="text-[var(--c-success)]" size={18} /> <span className="font-mono text-sm text-[var(--c-text)]"> {entry.batteryId} </span> </div> <span className="text-xs text-[var(--c-text-alt)]"> {entry.timestamp} </span> </motion.div>))) : ( <p className="text-center text-xs text-[var(--c-text-alt)] p-4"> No items scanned yet. </p> )} </div> </motion.div>)} </AnimatePresence>
               </div>
-              <button
-                onClick={completeAndExit}
-                className="w-full flex items-center justify-center gap-2 bg-[var(--c-success)] text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 mt-4 cursor-pointer"
-              >
+              <button onClick={completeAndSave} className="w-full flex items-center justify-center gap-2 bg-[var(--c-success)] text-white font-bold py-3.5 rounded-xl transition-all active:scale-95 hover:opacity-90 mt-4 cursor-pointer">
                 <CheckCircle size={18} /> Complete & Save Scan
               </button>
             </div>
@@ -986,57 +864,14 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
         )}
       </div>
 
-      <Modal
-        isOpen={!!lastScannedEntry}
-        onClose={handleContinueScanning}
-        title="Scan Successful"
-      >
-        {lastScannedEntry && (
-          <div className="text-center space-y-4">
-            <CheckCircle
-              size={48}
-              className="mx-auto text-[var(--c-success)]"
-            />
-            <p className="text-md text-[var(--c-text-alt)]">
-              Successfully scanned battery:
-            </p>
-            <p className="font-mono text-xl font-bold p-3 bg-[var(--c-bg)] rounded-lg border border-[var(--c-border)]">
-              {lastScannedEntry.batteryId}
-            </p>
-            <div className="flex flex-col space-y-3 pt-2">
-              <button
-                onClick={handleContinueScanning}
-                className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"
-              >
-                <ScanLine size={18} /> Continue Scanning
-              </button>
-              <button
-                onClick={handleCompleteFromModal}
-                className="w-full text-center bg-[var(--c-bg)] text-[var(--c-text)] font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 border border-[var(--c-border)] hover:bg-[var(--c-border)] cursor-pointer"
-              >
-                <CheckCircle size={16} /> Complete Session
-              </button>
-            </div>
-          </div>
-        )}
+      <AddItemModal isOpen={isAddItemModalOpen} onClose={() => setIsAddItemModalOpen(false)} onAdd={handleConfirmAddItem} />
+
+      <Modal isOpen={!!lastScannedEntry} onClose={handleContinueScanning} title="Scan Successful">
+        {lastScannedEntry && (<div className="text-center space-y-4"> <CheckCircle size={48} className="mx-auto text-[var(--c-success)]" /> <p className="text-md text-[var(--c-text-alt)]"> Successfully scanned battery: </p> <p className="font-mono text-xl font-bold p-3 bg-[var(--c-bg)] rounded-lg border border-[var(--c-border)]"> {lastScannedEntry.batteryId} </p> <div className="flex flex-col space-y-3 pt-2"> <button onClick={handleContinueScanning} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"> <ScanLine size={18} /> Continue Scanning </button> <button onClick={handleCompleteFromModal} className="w-full text-center bg-[var(--c-bg)] text-[var(--c-text)] font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 border border-[var(--c-border)] hover:bg-[var(--c-border)] cursor-pointer"> <CheckCircle size={16} /> Complete Session </button> </div> </div>)}
       </Modal>
 
-      <Modal
-        isOpen={stage === "scanning" && showPermissionModal}
-        hideCloseButton
-        title="Camera Permission"
-      >
-        <div className="text-center">
-          <p className="text-md text-[var(--c-text-alt)] mb-6">
-            This app needs access to your camera to scan QR codes.
-          </p>
-          <button
-            onClick={handleAllowCamera}
-            className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"
-          >
-            Allow Camera Access
-          </button>
-        </div>
+      <Modal isOpen={stage === "scanning" && showPermissionModal} hideCloseButton title="Camera Permission">
+        <div className="text-center"> <p className="text-md text-[var(--c-text-alt)] mb-6"> This app needs access to your camera to scan QR codes. </p> <button onClick={handleAllowCamera} className="w-full flex items-center justify-center gap-2 bg-[var(--c-accent)] text-[var(--c-accent-text)] font-bold py-3 rounded-xl transition-all active:scale-95 hover:opacity-90 cursor-pointer"> Allow Camera Access </button> </div>
       </Modal>
     </motion.div>
   );
@@ -1045,6 +880,8 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
 const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
   const { triggerShare } = useAppContext();
   const [isOpen, setIsOpen] = useState(false);
+  const chargerItem = session.items.find(item => item.name.toLowerCase() === 'chargers');
+
   return (
     <Card className="p-0 overflow-hidden">
       <div
@@ -1072,9 +909,11 @@ const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
             <p className="font-mono text-sm flex items-center gap-1.5 justify-end">
               <BatteryFull size={14} /> {session.entries.length}
             </p>
-            <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end">
-              <BatteryCharging size={12} /> {session.chargers}
-            </p>
+            {chargerItem && (
+                 <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end">
+                    <BatteryCharging size={12} /> {chargerItem.count}
+                 </p>
+            )}
           </div>
           <button
             onClick={(e) => {
@@ -1102,16 +941,22 @@ const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
             className="overflow-hidden"
           >
             <div className="p-2 pt-0 border-t border-[var(--c-border)] mx-4 pb-4">
-              <div className="flex sm:hidden items-center justify-end gap-4 pt-3 pb-1">
-                <p className="font-mono text-sm flex items-center gap-1.5 justify-end">
-                  <BatteryFull size={14} /> {session.entries.length}
-                </p>
-                <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end">
-                  <BatteryCharging size={12} /> {session.chargers}
-                </p>
-              </div>
               <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
-                Scanned Batteries
+                Inventory Counts
+              </h4>
+              {session.items.length > 0 ? (
+                session.items.map(item => (
+                  <div key={item.name} className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)] mb-1">
+                      <div className="flex items-center gap-3">
+                          <Boxes size={16} className="text-[var(--c-text-alt)]" />
+                          <span className="font-medium text-sm">{item.name}</span>
+                      </div>
+                      <span className="font-mono text-sm font-bold">{item.count}</span>
+                  </div>
+                ))
+              ) : ( <p className="text-center text-xs text-[var(--c-text-alt)] p-2"> No inventory recorded. </p> )}
+              <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
+                Scanned Batteries ({session.entries.length})
               </h4>
               {session.entries.length > 0 ? (
                 session.entries.map((entry) => (
@@ -1174,8 +1019,8 @@ const HistoryView: FC = () => {
         <History size={24} /> Scan Session History
       </h2>
       {sortedHistory.length > 0 ? (
-        sortedHistory.map((session) => (
-          <HistoryLogSummary key={session.date} session={session} />
+        sortedHistory.map((session, index) => (
+          <HistoryLogSummary key={`${session.date}-${index}`} session={session} />
         ))
       ) : (
         <div className="text-center py-16 text-[var(--c-text-alt)]">
@@ -1194,15 +1039,21 @@ const MainView: FC = () => {
     const stationHistory = scannedData[profile.stationId] || [];
     if (!Array.isArray(stationHistory) || stationHistory.length === 0)
       return { chargers: 0, batteries: 0 };
+    
     const latestSession = [...stationHistory].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     )[0];
+    
     const allEntries = stationHistory.flatMap((session) => session.entries);
+    
+    const chargerItem = latestSession?.items?.find(item => item.name.toLowerCase() === 'chargers');
+
     return {
-      chargers: latestSession?.chargers ?? 0,
+      chargers: chargerItem?.count ?? 0,
       batteries: new Set(allEntries.map((e) => e.batteryId)).size,
     };
   }, [scannedData, profile.stationId]);
+
   if (!profile.stationId) {
     return (
       <div className="p-6 text-center flex flex-col items-center justify-center flex-grow">
