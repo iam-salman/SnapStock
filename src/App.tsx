@@ -878,117 +878,130 @@ const ScanningFlow: FC<{ onExit: () => void }> = ({ onExit }) => {
 };
 
 const HistoryLogSummary: FC<{ session: ScanSession }> = ({ session }) => {
-  const { triggerShare } = useAppContext();
-  const [isOpen, setIsOpen] = useState(false);
-  const chargerItem = session.items.find(item => item.name.toLowerCase() === 'chargers');
+  const { triggerShare } = useAppContext();
+  const [isOpen, setIsOpen] = useState(false);
 
-  return (
-    <Card className="p-0 overflow-hidden">
-      <div
-        className="flex items-center justify-between p-4 cursor-pointer"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div className="flex items-center gap-4">
-          <Calendar size={20} className="text-[var(--c-accent)] shrink-0" />
-          <div>
-            <p className="font-semibold text-base leading-tight">
-              {new Date(session.date).toLocaleDateString("en-GB", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
-            <p className="text-sm text-[var(--c-text-alt)] leading-tight flex items-center gap-1.5">
-              <Clock size={12} />
-              {session.timestamp}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block">
-            <p className="font-mono text-sm flex items-center gap-1.5 justify-end">
-              <BatteryFull size={14} /> {session.entries.length}
-            </p>
-            {chargerItem && (
-                 <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end">
-                    <BatteryCharging size={12} /> {chargerItem.count}
-                 </p>
-            )}
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              triggerShare(session);
-            }}
-            className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]"
-          >
-            <Share2 size={16} />
-          </button>
-          <ChevronDown
-            size={20}
-            className={`text-[var(--c-text-alt)] transition-transform duration-300 ${
-              isOpen ? "rotate-180" : ""
-            }`}
-          />
-        </div>
-      </div>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="p-2 pt-0 border-t border-[var(--c-border)] mx-4 pb-4">
-              <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
-                Inventory Counts
-              </h4>
-              {session.items.length > 0 ? (
-                session.items.map(item => (
-                  <div key={item.name} className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)] mb-1">
-                      <div className="flex items-center gap-3">
-                          <Boxes size={16} className="text-[var(--c-text-alt)]" />
-                          <span className="font-medium text-sm">{item.name}</span>
-                      </div>
-                      <span className="font-mono text-sm font-bold">{item.count}</span>
-                  </div>
-                ))
-              ) : ( <p className="text-center text-xs text-[var(--c-text-alt)] p-2"> No inventory recorded. </p> )}
-              <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
-                Scanned Batteries ({session.entries.length})
-              </h4>
-              {session.entries.length > 0 ? (
-                session.entries.map((entry) => (
-                  <div
-                    key={entry.batteryId}
-                    className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ChevronsRight
-                        size={16}
-                        className="text-[var(--c-text-alt)]"
-                      />
-                      <span className="font-mono text-sm">
-                        {entry.batteryId}
-                      </span>
-                    </div>
-                    <span className="text-xs text-[var(--c-text-alt)]">
-                      {entry.timestamp}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-center text-xs text-[var(--c-text-alt)] p-2">
-                  No batteries in this session.
-                </p>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Card>
-  );
+  const chargerItem = session.items?.find(
+    (item) => item.name.toLowerCase() === "chargers"
+  );
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className="flex items-center gap-4">
+          <Calendar size={20} className="text-[var(--c-accent)] shrink-0" />
+          <div>
+            <p className="font-semibold text-base leading-tight">
+              {new Date(session.date).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </p>
+            <p className="text-sm text-[var(--c-text-alt)] leading-tight flex items-center gap-1.5">
+              <Clock size={12} />
+              {session.timestamp}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right hidden sm:block">
+            <p className="font-mono text-sm flex items-center gap-1.5 justify-end">
+              <BatteryFull size={14} /> {session.entries.length}
+            </p>
+            {chargerItem && (
+              <p className="font-mono text-xs text-[var(--c-text-faint)] flex items-center gap-1.5 justify-end">
+                <BatteryCharging size={12} /> {chargerItem.count}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerShare(session);
+            }}
+            className="p-2 rounded-full hover:bg-[var(--c-border)] text-[var(--c-text-alt)]"
+          >
+            <Share2 size={16} />
+          </button>
+          <ChevronDown
+            size={20}
+            className={`text-[var(--c-text-alt)] transition-transform duration-300 ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
+        </div>
+      </div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="p-2 pt-0 border-t border-[var(--c-border)] mx-4 pb-4">
+              <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
+                Inventory Counts
+              </h4>
+              {/* FIX 2: Check for `session.items` existence before trying to access `.length` or `.map` */}
+              {session.items && session.items.length > 0 ? (
+                session.items.map((item) => (
+                  <div
+                    key={item.name}
+                    className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)] mb-1"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Boxes size={16} className="text-[var(--c-text-alt)]" />
+                      <span className="font-medium text-sm">{item.name}</span>
+                    </div>
+                    <span className="font-mono text-sm font-bold">
+                      {item.count}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-xs text-[var(--c-text-alt)] p-2">
+                  No inventory recorded.
+                </p>
+              )}
+              <h4 className="text-xs font-semibold text-[var(--c-text-alt)] pt-3 pb-1 px-2">
+                Scanned Batteries ({session.entries.length})
+              </h4>
+              {session.entries.length > 0 ? (
+                session.entries.map((entry) => (
+                  <div
+                    key={entry.batteryId}
+                    className="flex items-center justify-between p-2 rounded-md bg-[var(--c-bg)]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <ChevronsRight
+                        size={16}
+                        className="text-[var(--c-text-alt)]"
+                      />
+                      <span className="font-mono text-sm">
+                        {entry.batteryId}
+                      </span>
+                    </div>
+                    <span className="text-xs text-[var(--c-text-alt)]">
+                      {entry.timestamp}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-xs text-[var(--c-text-alt)] p-2">
+                  No batteries in this session.
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  );
 };
 
 const HistoryView: FC = () => {
