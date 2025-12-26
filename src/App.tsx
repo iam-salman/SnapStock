@@ -68,6 +68,8 @@ const STATIONS_DATA = [
   { id: "De258797", name: "Sector 20", city: "Chandigarh" },
   { id: "De455892", name: "Sector 35", city: "Chandigarh" },
   { id: "De297974", name: "Sector 26", city: "Chandigarh" },
+  { id: "De785781", name: "Mauli Jagran", city: "Chandigarh" },
+  { id: "De831473", name: "Pipliwala Manimajra", city: "Chandigarh" },
 ];
 
 type Theme = "light" | "dark";
