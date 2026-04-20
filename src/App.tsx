@@ -70,6 +70,14 @@ const STATIONS_DATA = [
   { id: "De297974", name: "Sector 26", city: "Chandigarh" },
   { id: "De785781", name: "Mauli Jagran", city: "Chandigarh" },
   { id: "De831473", name: "Pipliwala Manimajra", city: "Chandigarh" },
+  { id: "De840663", name: "Sector 17A", city: "Chandigarh" },
+
+  // Gurugram stations
+  { id: "De590884", name: "Wazirabad", city: "Gurugram" },
+  { id: "De177311", name: "Kanhai, Sector 44", city: "Gurugram" },
+  { id: "De381192", name: "Jharsa Sector 39", city: "Gurugram" },
+  { id: "De709850", name: "Laxman Vihar / Dhanwapur Road", city: "Gurugram" },
+  { id: "De157118", name: "DLF PHASE 3", city: "Gurugram" },
 ];
 
 type Theme = "light" | "dark";
