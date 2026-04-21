@@ -78,6 +78,8 @@ const STATIONS_DATA = [
   { id: "De381192", name: "Jharsa Sector 39", city: "Gurugram" },
   { id: "De709850", name: "Laxman Vihar / Dhanwapur Road", city: "Gurugram" },
   { id: "De157118", name: "DLF PHASE 3", city: "Gurugram" },
+  { id: "De623857", name: "Surya Vihar / Sector 4", city: "Gurugram" },
+  { id: "De277861", name: "Mianwali Colony / New Railway Road", city: "Gurugram" },
 ];
 
 type Theme = "light" | "dark";
