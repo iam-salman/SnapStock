@@ -82,6 +82,7 @@ const STATIONS_DATA = [
   { id: "De277861", name: "Mianwali Colony / New Railway Road", city: "Gurugram" },
   { id: "De291614", name: "DLF PHASE 1", city: "Gurugram" },
   { id: "De596676", name: "RAJENDRA PARK SECTOR 10", city: "Gurugram" },
+  { id: "De784256", name: "DUNDAHERA", city: "Gurugram" },
   { id: "De__", name: "Upcoming Station", city: "Gurugram" },
   { id: "De___", name: "Upcoming Station", city: "Gurugram" },
 ];
